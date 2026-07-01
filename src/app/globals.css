@@ -1,0 +1,477 @@
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/nunito-sans";
+@import "@fontsource/atkinson-hyperlegible/400.css";
+@import "@fontsource/atkinson-hyperlegible/700.css";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-sans/700.css";
+@import "@fontsource-variable/literata";
+@import "@fontsource/source-serif-4/400.css";
+@import "@fontsource/source-serif-4/600.css";
+@import "@fontsource/source-serif-4/700.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --notka-bg: #f6f8fb;
+  --notka-main: #ffffff;
+  --notka-glass: rgba(255, 255, 255, 0.72);
+  --notka-elevated: #eef3f8;
+  --notka-border: rgba(15, 23, 42, 0.12);
+  --notka-text-primary: #0f172a;
+  --notka-text-secondary: #334155;
+  --notka-text-muted: #64748b;
+  --notka-accent: #0f766e;
+  --notka-accent-hover: #0d9488;
+  --notka-danger: #dc2626;
+}
+
+:root.dark {
+  color-scheme: dark;
+  --notka-bg: #07111f;
+  --notka-main: #101d2d;
+  --notka-glass: rgba(23, 37, 56, 0.72);
+  --notka-elevated: #1a2a40;
+  --notka-border: rgba(148, 163, 184, 0.18);
+  --notka-text-primary: #f8fafc;
+  --notka-text-secondary: #cbd5e1;
+  --notka-text-muted: #64748b;
+  --notka-accent: #14b8a6;
+  --notka-accent-hover: #2dd4bf;
+  --notka-danger: #f87171;
+}
+
+:root[data-theme="ink-blue"] {
+  --notka-bg: #f0f9ff;
+  --notka-main: #ffffff;
+  --notka-glass: rgba(255, 255, 255, 0.78);
+  --notka-elevated: #e0f2fe;
+  --notka-border: rgba(14, 116, 144, 0.14);
+  --notka-text-primary: #082f49;
+  --notka-text-secondary: #075985;
+  --notka-text-muted: #0284c7;
+  --notka-accent: #059669;
+  --notka-accent-hover: #10b981;
+  --notka-danger: #e11d48;
+}
+
+:root.dark[data-theme="ink-blue"] {
+  --notka-bg: #061826;
+  --notka-main: #0d2538;
+  --notka-glass: rgba(18, 45, 66, 0.72);
+  --notka-elevated: #14344d;
+  --notka-border: rgba(125, 211, 252, 0.16);
+  --notka-text-primary: #f0f9ff;
+  --notka-text-secondary: #bae6fd;
+  --notka-text-muted: #7dd3fc;
+  --notka-accent: #34d399;
+  --notka-accent-hover: #6ee7b7;
+  --notka-danger: #fb7185;
+}
+
+:root[data-theme="graphite-amber"] {
+  --notka-bg: #fafaf9;
+  --notka-main: #ffffff;
+  --notka-glass: rgba(255, 255, 255, 0.78);
+  --notka-elevated: #f3f4f6;
+  --notka-border: rgba(120, 113, 108, 0.18);
+  --notka-text-primary: #1c1917;
+  --notka-text-secondary: #44403c;
+  --notka-text-muted: #78716c;
+  --notka-accent: #d97706;
+  --notka-accent-hover: #f59e0b;
+  --notka-danger: #dc2626;
+}
+
+:root.dark[data-theme="graphite-amber"] {
+  --notka-bg: #0b0d10;
+  --notka-main: #161a20;
+  --notka-glass: rgba(31, 35, 43, 0.74);
+  --notka-elevated: #222832;
+  --notka-border: rgba(245, 158, 11, 0.16);
+  --notka-text-primary: #f9fafb;
+  --notka-text-secondary: #d1d5db;
+  --notka-text-muted: #6b7280;
+  --notka-accent: #f59e0b;
+  --notka-accent-hover: #fbbf24;
+  --notka-danger: #ef4444;
+}
+
+:root[data-theme="midnight-violet"] {
+  --notka-bg: #faf5ff;
+  --notka-main: #ffffff;
+  --notka-glass: rgba(255, 255, 255, 0.78);
+  --notka-elevated: #f3e8ff;
+  --notka-border: rgba(109, 40, 217, 0.14);
+  --notka-text-primary: #2e1065;
+  --notka-text-secondary: #581c87;
+  --notka-text-muted: #7e22ce;
+  --notka-accent: #7c3aed;
+  --notka-accent-hover: #8b5cf6;
+  --notka-danger: #e11d48;
+}
+
+:root.dark[data-theme="midnight-violet"] {
+  --notka-bg: #0e0a1f;
+  --notka-main: #18122b;
+  --notka-glass: rgba(35, 27, 59, 0.74);
+  --notka-elevated: #241a3f;
+  --notka-border: rgba(196, 181, 253, 0.16);
+  --notka-text-primary: #faf5ff;
+  --notka-text-secondary: #ddd6fe;
+  --notka-text-muted: #a78bfa;
+  --notka-accent: #a78bfa;
+  --notka-accent-hover: #c4b5fd;
+  --notka-danger: #fb7185;
+}
+
+:root[data-theme="forest-sage"] {
+  --notka-bg: #f7fbf5;
+  --notka-main: #ffffff;
+  --notka-glass: rgba(255, 255, 255, 0.78);
+  --notka-elevated: #ecfdf3;
+  --notka-border: rgba(22, 101, 52, 0.14);
+  --notka-text-primary: #052e16;
+  --notka-text-secondary: #166534;
+  --notka-text-muted: #4d7c0f;
+  --notka-accent: #16a34a;
+  --notka-accent-hover: #22c55e;
+  --notka-danger: #dc2626;
+}
+
+:root.dark[data-theme="forest-sage"] {
+  --notka-bg: #07140e;
+  --notka-main: #102019;
+  --notka-glass: rgba(24, 45, 35, 0.74);
+  --notka-elevated: #1a3328;
+  --notka-border: rgba(134, 239, 172, 0.14);
+  --notka-text-primary: #f0fdf4;
+  --notka-text-secondary: #bbf7d0;
+  --notka-text-muted: #86efac;
+  --notka-accent: #22c55e;
+  --notka-accent-hover: #4ade80;
+  --notka-danger: #f87171;
+}
+
+:root[data-theme="arctic-cyan"] {
+  --notka-bg: #ecfeff;
+  --notka-main: #ffffff;
+  --notka-glass: rgba(255, 255, 255, 0.78);
+  --notka-elevated: #cffafe;
+  --notka-border: rgba(8, 145, 178, 0.14);
+  --notka-text-primary: #083344;
+  --notka-text-secondary: #155e75;
+  --notka-text-muted: #0891b2;
+  --notka-accent: #0891b2;
+  --notka-accent-hover: #06b6d4;
+  --notka-danger: #e11d48;
+}
+
+:root.dark[data-theme="arctic-cyan"] {
+  --notka-bg: #04131a;
+  --notka-main: #0b2230;
+  --notka-glass: rgba(15, 46, 65, 0.72);
+  --notka-elevated: #123247;
+  --notka-border: rgba(103, 232, 249, 0.16);
+  --notka-text-primary: #ecfeff;
+  --notka-text-secondary: #a5f3fc;
+  --notka-text-muted: #67e8f9;
+  --notka-accent: #06b6d4;
+  --notka-accent-hover: #22d3ee;
+  --notka-danger: #fb7185;
+}
+
+:root[data-theme="warm-paper"] {
+  --notka-bg: #fffbf5;
+  --notka-main: #ffffff;
+  --notka-glass: rgba(255, 255, 255, 0.78);
+  --notka-elevated: #fef3e2;
+  --notka-border: rgba(154, 52, 18, 0.12);
+  --notka-text-primary: #431407;
+  --notka-text-secondary: #7c2d12;
+  --notka-text-muted: #9a3412;
+  --notka-accent: #ea580c;
+  --notka-accent-hover: #f97316;
+  --notka-danger: #dc2626;
+}
+
+:root.dark[data-theme="warm-paper"] {
+  --notka-bg: #17110d;
+  --notka-main: #241a14;
+  --notka-glass: rgba(52, 37, 28, 0.72);
+  --notka-elevated: #32241b;
+  --notka-border: rgba(253, 186, 116, 0.14);
+  --notka-text-primary: #fff7ed;
+  --notka-text-secondary: #fed7aa;
+  --notka-text-muted: #c08457;
+  --notka-accent: #f97316;
+  --notka-accent-hover: #fb923c;
+  --notka-danger: #ef4444;
+}
+
+:root[data-theme="slate-rose"] {
+  --notka-bg: #fff7f9;
+  --notka-main: #ffffff;
+  --notka-glass: rgba(255, 255, 255, 0.78);
+  --notka-elevated: #ffe4e9;
+  --notka-border: rgba(190, 18, 60, 0.12);
+  --notka-text-primary: #1e293b;
+  --notka-text-secondary: #475569;
+  --notka-text-muted: #64748b;
+  --notka-accent: #e11d48;
+  --notka-accent-hover: #f43f5e;
+  --notka-danger: #be123c;
+}
+
+:root.dark[data-theme="slate-rose"] {
+  --notka-bg: #0f1117;
+  --notka-main: #1a1d27;
+  --notka-glass: rgba(35, 39, 52, 0.74);
+  --notka-elevated: #252a38;
+  --notka-border: rgba(251, 113, 133, 0.14);
+  --notka-text-primary: #f8fafc;
+  --notka-text-secondary: #cbd5e1;
+  --notka-text-muted: #94a3b8;
+  --notka-accent: #fb7185;
+  --notka-accent-hover: #fda4af;
+  --notka-danger: #f43f5e;
+}
+
+:root[data-theme="deep-ocean"] {
+  --notka-bg: #f0fdfa;
+  --notka-main: #ffffff;
+  --notka-glass: rgba(255, 255, 255, 0.78);
+  --notka-elevated: #ccfbf1;
+  --notka-border: rgba(15, 118, 110, 0.14);
+  --notka-text-primary: #042f2e;
+  --notka-text-secondary: #115e59;
+  --notka-text-muted: #0f766e;
+  --notka-accent: #0d9488;
+  --notka-accent-hover: #14b8a6;
+  --notka-danger: #e11d48;
+}
+
+:root.dark[data-theme="deep-ocean"] {
+  --notka-bg: #031b22;
+  --notka-main: #0a2a33;
+  --notka-glass: rgba(13, 53, 64, 0.74);
+  --notka-elevated: #123d49;
+  --notka-border: rgba(153, 246, 228, 0.14);
+  --notka-text-primary: #f0fdfa;
+  --notka-text-secondary: #ccfbf1;
+  --notka-text-muted: #5eead4;
+  --notka-accent: #2dd4bf;
+  --notka-accent-hover: #5eead4;
+  --notka-danger: #fb7185;
+}
+
+:root[data-theme="minimal-mono"] {
+  --notka-bg: #f8fafc;
+  --notka-main: #ffffff;
+  --notka-glass: rgba(255, 255, 255, 0.78);
+  --notka-elevated: #f1f5f9;
+  --notka-border: rgba(15, 23, 42, 0.12);
+  --notka-text-primary: #020617;
+  --notka-text-secondary: #334155;
+  --notka-text-muted: #64748b;
+  --notka-accent: #2563eb;
+  --notka-accent-hover: #3b82f6;
+  --notka-danger: #dc2626;
+}
+
+:root.dark[data-theme="minimal-mono"] {
+  --notka-bg: #090a0c;
+  --notka-main: #14161a;
+  --notka-glass: rgba(28, 31, 36, 0.74);
+  --notka-elevated: #20242b;
+  --notka-border: rgba(148, 163, 184, 0.16);
+  --notka-text-primary: #f9fafb;
+  --notka-text-secondary: #d1d5db;
+  --notka-text-muted: #6b7280;
+  --notka-accent: #3b82f6;
+  --notka-accent-hover: #60a5fa;
+  --notka-danger: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--notka-accent) 10%, transparent), transparent 28rem),
+    linear-gradient(135deg, var(--notka-bg) 0%, var(--notka-elevated) 48%, var(--notka-bg) 100%);
+  color: var(--notka-text-primary);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-feature-settings:
+    "cv02",
+    "cv03",
+    "cv04",
+    "cv11";
+  text-rendering: geometricPrecision;
+}
+
+.dark body {
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--notka-accent) 9%, transparent), transparent 28rem),
+    linear-gradient(135deg, var(--notka-bg) 0%, var(--notka-main) 52%, var(--notka-bg) 100%);
+  color: var(--notka-text-primary);
+}
+
+:root[data-app-font="system"] body {
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+:root[data-app-font="inter"] body {
+  font-family: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-app-font="geist"] body {
+  font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-app-font="nunito"] body {
+  font-family: "Nunito Sans Variable", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-app-font="atkinson"] body {
+  font-family: "Atkinson Hyperlegible", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-app-font="ibm-plex"] body {
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-app-font="literata"] body {
+  font-family: "Literata Variable", ui-serif, Georgia, serif;
+}
+
+:root[data-app-font="source-serif"] body {
+  font-family: "Source Serif 4", ui-serif, Georgia, serif;
+}
+
+::selection {
+  background: rgba(20, 184, 166, 0.28);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply border border-white/65 bg-white/[0.74] shadow-glass backdrop-blur-2xl dark:border-white/[0.09] dark:bg-white/[0.07] dark:shadow-glass-dark;
+    background: var(--notka-glass);
+    border-color: var(--notka-border);
+  }
+
+  .notka-input {
+    @apply w-full rounded-xl border border-black/[0.08] bg-white/70 px-3 py-2.5 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-teal-500/60 focus:ring-4 focus:ring-teal-500/15 dark:border-white/[0.09] dark:bg-white/[0.07] dark:text-slate-100 dark:placeholder:text-slate-500;
+    background: color-mix(in srgb, var(--notka-elevated) 72%, transparent);
+    border-color: var(--notka-border);
+    color: var(--notka-text-primary);
+  }
+
+  .notka-textarea {
+    @apply w-full resize-none border-0 bg-transparent text-[14.5px] leading-7 text-ink outline-none placeholder:text-slate-400 focus:ring-0 dark:text-slate-100 dark:placeholder:text-slate-500;
+    color: var(--notka-text-primary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  }
+
+  .primary-button {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-teal-950/10 transition hover:-translate-y-px hover:bg-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-500/20 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60;
+    background: var(--notka-accent);
+  }
+
+  .primary-button:hover {
+    background: var(--notka-accent-hover);
+  }
+
+  .muted-button {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-black/[0.08] bg-white/55 px-3 py-2 text-sm font-medium text-slate-700 transition hover:-translate-y-px hover:bg-white/80 focus:outline-none focus:ring-4 focus:ring-teal-500/15 active:translate-y-0 dark:border-white/[0.09] dark:bg-white/[0.055] dark:text-slate-200 dark:hover:bg-white/[0.1];
+    background: color-mix(in srgb, var(--notka-elevated) 55%, transparent);
+    border-color: var(--notka-border);
+    color: var(--notka-text-secondary);
+  }
+
+  .icon-button {
+    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-transparent text-slate-500 transition hover:-translate-y-px hover:border-black/[0.08] hover:bg-white/70 hover:text-slate-900 focus:outline-none focus:ring-4 focus:ring-teal-500/15 active:translate-y-0 dark:text-slate-400 dark:hover:border-white/[0.09] dark:hover:bg-white/[0.085] dark:hover:text-white;
+    color: var(--notka-text-muted);
+  }
+
+  .sidebar-item {
+    @apply flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-slate-600 transition hover:bg-white/60 hover:text-slate-950 focus:outline-none focus:ring-4 focus:ring-teal-500/10 dark:text-slate-300 dark:hover:bg-white/[0.075] dark:hover:text-white;
+    color: var(--notka-text-secondary);
+  }
+
+  .sidebar-item-active {
+    @apply border border-teal-500/15 bg-white/85 text-slate-950 shadow-sm shadow-slate-950/5 dark:border-teal-300/15 dark:bg-white/[0.115] dark:text-white dark:shadow-black/20;
+    background: color-mix(in srgb, var(--notka-elevated) 72%, transparent);
+    border-color: color-mix(in srgb, var(--notka-accent) 24%, transparent);
+    color: var(--notka-text-primary);
+  }
+
+  .segmented-control {
+    @apply inline-flex items-center rounded-xl border border-black/[0.08] bg-white/45 p-1 shadow-sm shadow-slate-950/5 dark:border-white/[0.09] dark:bg-white/[0.055] dark:shadow-black/20;
+    background: color-mix(in srgb, var(--notka-elevated) 50%, transparent);
+    border-color: var(--notka-border);
+  }
+
+  .segmented-button {
+    @apply rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 dark:text-slate-400 dark:hover:text-white;
+    color: var(--notka-text-muted);
+  }
+
+  .segmented-button-active {
+    @apply bg-white text-slate-950 shadow-sm dark:bg-white/[0.13] dark:text-white;
+    background: color-mix(in srgb, var(--notka-main) 86%, transparent);
+    color: var(--notka-text-primary);
+  }
+
+  .notka-badge {
+    @apply rounded-full border border-teal-500/10 bg-teal-500/10 px-2.5 py-1 text-xs font-semibold text-teal-700 dark:border-teal-300/10 dark:text-teal-300;
+    background: color-mix(in srgb, var(--notka-accent) 14%, transparent);
+    border-color: color-mix(in srgb, var(--notka-accent) 18%, transparent);
+    color: var(--notka-accent-hover);
+  }
+
+  .settings-popover {
+    @apply border shadow-2xl backdrop-blur-xl;
+    background: color-mix(in srgb, var(--notka-main) 98%, var(--notka-elevated));
+    border-color: color-mix(in srgb, var(--notka-border) 82%, var(--notka-text-muted) 18%);
+    box-shadow:
+      0 24px 80px rgba(0, 0, 0, 0.34),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  .preview-prose {
+    @apply text-[15px] leading-7 text-slate-700 dark:text-slate-200;
+    color: var(--notka-text-secondary);
+    font-family: inherit;
+  }
+}

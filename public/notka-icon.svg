@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Notka">
+  <rect width="512" height="512" rx="112" fill="#07111F"/>
+  <rect x="112" y="86" width="260" height="340" rx="40" fill="#101D2D" stroke="#14B8A6" stroke-width="22"/>
+  <path d="M160 160h132M160 224h192M160 288h154" fill="none" stroke="#CBD5E1" stroke-width="24" stroke-linecap="round"/>
+  <path d="M350 329l52-52a31 31 0 0 1 44 44l-52 52-64 20 20-64z" fill="#14B8A6"/>
+  <path d="M384 295l44 44" fill="none" stroke="#F8FAFC" stroke-width="18" stroke-linecap="round"/>
+</svg>

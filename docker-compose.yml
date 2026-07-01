@@ -1,0 +1,12 @@
+services:
+  notka:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATA_DIR: /data
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET to a long random value before starting Notka}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

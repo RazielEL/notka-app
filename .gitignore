@@ -1,0 +1,28 @@
+# dependencies
+node_modules
+
+# Next.js / build output
+.next
+out
+dist
+coverage
+
+# environment files
+.env
+.env.*
+!.env.example
+
+# runtime data
+data
+/data
+/data/*
+*.db
+*.db-shm
+*.db-wal
+
+# OS / logs
+.DS_Store
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+*.log
