@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createSession } from "@/lib/auth/session";
+import { assertSessionConfiguration, createSession } from "@/lib/auth/session";
 import { apiError, readJson } from "@/lib/server/api";
 import { createUser, hasUsers } from "@/lib/server/users";
 
@@ -9,6 +9,8 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
+    assertSessionConfiguration();
+
     if (!(await hasUsers())) {
       return NextResponse.json(
         { error: "Create the first admin account in setup first." },

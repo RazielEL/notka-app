@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createSession } from "@/lib/auth/session";
+import { assertSessionConfiguration, createSession } from "@/lib/auth/session";
 import { createNote } from "@/lib/server/notes";
 import { createAdminUser, hasUsers } from "@/lib/server/users";
 
@@ -9,6 +9,8 @@ export async function runFirstSetup(input: {
   displayName: unknown;
   password: unknown;
 }) {
+  assertSessionConfiguration();
+
   if (await hasUsers()) {
     throw new Error("Setup is disabled after the first user exists.");
   }

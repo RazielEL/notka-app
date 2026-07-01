@@ -15,6 +15,7 @@ const COMPOSE_PLACEHOLDER_SECRET = "change-this-long-random-string";
 
 export async function createSession(userId: string) {
   const sessionId = randomBytes(32).toString("hex");
+  const signedSessionId = signSessionId(sessionId);
   const now = new Date();
   const expiresAt = new Date(now);
   expiresAt.setDate(expiresAt.getDate() + SESSION_TTL_DAYS);
@@ -27,7 +28,7 @@ export async function createSession(userId: string) {
     expiresAt: expiresAt.toISOString(),
   });
 
-  cookies().set(SESSION_COOKIE, signSessionId(sessionId), {
+  cookies().set(SESSION_COOKIE, signedSessionId, {
     httpOnly: true,
     sameSite: "lax",
     secure: isSecureCookieEnabled(),
@@ -111,6 +112,10 @@ function getCookieSessionId() {
 
 function signSessionId(sessionId: string) {
   return `${sessionId}.${createSignature(sessionId)}`;
+}
+
+export function assertSessionConfiguration() {
+  getSessionSecret();
 }
 
 function createSignature(value: string) {

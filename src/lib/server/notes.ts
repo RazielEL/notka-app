@@ -245,10 +245,15 @@ async function updateNoteLocked(ownerUserId: string, noteId: string, input: {
   }
 
   try {
-    await getDb()
+    const result = getDb()
       .update(notes)
       .set(updates)
-      .where(and(eq(notes.id, note.id), ...noteScopeConditions(ownerUserId, scope), isNull(notes.deletedAt)));
+      .where(and(eq(notes.id, note.id), ...noteScopeConditions(ownerUserId, scope), isNull(notes.deletedAt)))
+      .run();
+
+    if (result.changes === 0) {
+      throw new Error("Note was changed before it could be saved.");
+    }
 
     const updated = await getNoteForUser(ownerUserId, note.id, scope);
     return noteToDetailDto(updated, content ?? (await readMarkdownFile(updated.filePath)));
@@ -277,7 +282,7 @@ async function deleteNoteLocked(ownerUserId: string, noteId: string, scopeInput?
   const movedToTrash = await moveMarkdownFile(note.filePath, trashPath);
 
   try {
-    await getDb()
+    const result = getDb()
       .update(notes)
       .set({
         filePath: trashPath,
@@ -285,15 +290,10 @@ async function deleteNoteLocked(ownerUserId: string, noteId: string, scopeInput?
         updatedAt: now,
         updatedByUserId: ownerUserId,
       })
-      .where(and(eq(notes.id, note.id), ...noteScopeConditions(ownerUserId, scope)));
+      .where(and(eq(notes.id, note.id), ...noteScopeConditions(ownerUserId, scope), isNull(notes.deletedAt)))
+      .run();
 
-    const deletedRows = await getDb()
-      .select({ id: notes.id })
-      .from(notes)
-      .where(and(eq(notes.id, note.id), ...noteScopeConditions(ownerUserId, scope), isNotNull(notes.deletedAt)))
-      .limit(1);
-
-    if (!deletedRows[0]) {
+    if (result.changes === 0) {
       throw new Error("Note was changed before it could be deleted.");
     }
   } catch (error) {

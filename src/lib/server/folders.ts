@@ -49,38 +49,41 @@ export async function ensureGroupInboxFolder(ownerUserId: string) {
 
 async function ensureDefaultFolder(ownerUserId: string, scope: NoteScope) {
   const name = defaultFolderName(scope);
-  const existing = await getDb()
-    .select()
-    .from(folders)
-    .where(
-      and(
-        ...folderScopeConditions(ownerUserId, scope),
-        eq(folders.name, name),
-        isNull(folders.parentFolderId),
-      ),
-    )
-    .limit(1);
+  return getDb().transaction((tx) => {
+    const existing = tx
+      .select()
+      .from(folders)
+      .where(
+        and(
+          ...folderScopeConditions(ownerUserId, scope),
+          eq(folders.name, name),
+          isNull(folders.parentFolderId),
+        ),
+      )
+      .limit(1)
+      .get();
 
-  if (existing[0]) {
-    return existing[0];
-  }
+    if (existing) {
+      return existing;
+    }
 
-  const now = new Date().toISOString();
-  const folder = {
-    id: randomUUID(),
-    ownerUserId,
-    scope,
-    parentFolderId: null,
-    createdByUserId: ownerUserId,
-    updatedByUserId: ownerUserId,
-    name,
-    sortOrder: 0,
-    createdAt: now,
-    updatedAt: now,
-  };
+    const now = new Date().toISOString();
+    const folder = {
+      id: randomUUID(),
+      ownerUserId,
+      scope,
+      parentFolderId: null,
+      createdByUserId: ownerUserId,
+      updatedByUserId: ownerUserId,
+      name,
+      sortOrder: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
 
-  await getDb().insert(folders).values(folder);
-  return folder;
+    tx.insert(folders).values(folder).run();
+    return folder;
+  });
 }
 
 export async function createFolder(

@@ -6,7 +6,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/* \
   && corepack enable
 COPY package.json pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile=false
+RUN pnpm install --frozen-lockfile
 
 FROM node:20-bookworm-slim AS builder
 WORKDIR /app

@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "typecheck": "tsc --noEmit",
     "db:reset:dev": "node scripts/reset-dev-data.mjs",
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio"
