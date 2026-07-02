@@ -767,7 +767,7 @@ function TreeNoteItem({
   return (
     <button
       className={cn(
-        "sidebar-item min-w-0 border border-transparent py-1.5 text-xs",
+        "sidebar-item mb-1 min-w-0 border border-transparent py-1.5 text-xs",
         noteAlertClass(alertTone),
         active && "sidebar-item-active",
       )}

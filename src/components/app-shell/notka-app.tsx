@@ -53,11 +53,11 @@ const MOBILE_SIDEBAR_SWIPE_EDGE_PX = 72;
 const MOBILE_SIDEBAR_SWIPE_DISTANCE_PX = 56;
 const MOBILE_SIDEBAR_SWIPE_RATIO = 1.25;
 const appSafeAreaStyle: CSSProperties = {
-  paddingTop: "max(2.5rem, calc(env(safe-area-inset-top) + 2.5rem))",
+  paddingTop: "max(1.75rem, calc(env(safe-area-inset-top) + 1.75rem))",
   paddingBottom: "max(0.75rem, calc(env(safe-area-inset-bottom) + 0.75rem))",
 };
 const mobileSidebarPanelStyle: CSSProperties = {
-  top: "max(2.5rem, calc(env(safe-area-inset-top) + 2.5rem))",
+  top: "max(1.75rem, calc(env(safe-area-inset-top) + 1.75rem))",
   bottom: "max(0.75rem, calc(env(safe-area-inset-bottom) + 0.75rem))",
 };
 const floatingMenuButtonStyle: CSSProperties = {

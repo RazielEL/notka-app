@@ -498,7 +498,7 @@ export function NoteEditor({
         </div>
 
         {structuredNote ? (
-          <div className="muted-button pointer-events-none h-10 px-3 text-xs uppercase tracking-wide">
+          <div className="muted-button pointer-events-none hidden h-10 px-3 text-xs uppercase tracking-wide sm:inline-flex">
             {structuredNote.kind === "checklist" ? (
               <Check className="h-4 w-4" />
             ) : (
@@ -513,7 +513,7 @@ export function NoteEditor({
         <div className="relative min-w-0">
           <button
             className={cn(
-              "muted-button h-10 px-3 text-xs uppercase tracking-wide",
+              "muted-button h-10 px-3 text-xs uppercase tracking-wide max-sm:w-10 max-sm:px-0",
               note.alertAt &&
                 "border-teal-500/20 bg-teal-500/10 text-teal-700 dark:text-teal-200",
               alertTone === "yellow" &&
@@ -529,7 +529,7 @@ export function NoteEditor({
             onClick={() => setAlertMenuOpen((open) => !open)}
           >
             <CalendarClock className="h-4 w-4" />
-            {t("editor.setAlert")}
+            <span className="max-sm:hidden">{t("editor.setAlert")}</span>
           </button>
           {alertMenuOpen ? (
             <div className="settings-popover fixed inset-x-3 top-32 z-30 max-h-[calc(100dvh-9rem)] overflow-y-auto rounded-2xl p-3 sm:absolute sm:inset-x-auto sm:left-0 sm:top-[calc(100%+0.5rem)] sm:w-[min(20rem,calc(100vw-2rem))]">
@@ -593,7 +593,7 @@ export function NoteEditor({
         <div className="relative min-w-0">
           <button
             className={cn(
-              "muted-button h-10 px-3 text-xs uppercase tracking-wide",
+              "muted-button h-10 px-3 text-xs uppercase tracking-wide max-sm:w-10 max-sm:px-0",
               note.calendarAt &&
                 "border-teal-500/20 bg-teal-500/10 text-teal-700 dark:text-teal-200",
             )}
@@ -611,7 +611,7 @@ export function NoteEditor({
             onClick={() => setCalendarMenuOpen((open) => !open)}
           >
             <CalendarPlus className="h-4 w-4" />
-            {t("editor.addToCalendar")}
+            <span className="max-sm:hidden">{t("editor.addToCalendar")}</span>
           </button>
           {calendarMenuOpen ? (
             <div className="settings-popover fixed inset-x-3 top-32 z-30 max-h-[calc(100dvh-9rem)] overflow-y-auto rounded-2xl p-3 sm:absolute sm:inset-x-auto sm:left-0 sm:top-[calc(100%+0.5rem)] sm:w-[min(20rem,calc(100vw-2rem))]">
@@ -664,22 +664,24 @@ export function NoteEditor({
           ) : null}
         </div>
 
-        <div className="ml-0 flex w-full min-w-0 items-center justify-end gap-2 sm:ml-auto sm:w-auto">
+        <div className="ml-auto flex min-w-0 items-center justify-end gap-2">
           {structuredNote?.kind === "checklist" ? (
             <Button
               type="button"
               variant="primary"
-              className="h-10 px-3"
+              className="h-10 px-3 max-sm:w-10 max-sm:px-0"
+              title={t("editor.addCategory")}
+              aria-label={t("editor.addCategory")}
               onClick={addChecklistCategory}
             >
               <Plus className="h-4 w-4" />
-              {t("editor.addCategory")}
+              <span className="max-sm:hidden">{t("editor.addCategory")}</span>
             </Button>
           ) : null}
 
           <div className="relative">
             <button
-              className="muted-button h-10 px-3"
+              className="muted-button h-10 px-3 max-sm:px-2.5"
               type="button"
               title={t("editor.templates")}
               aria-label={t("editor.openTemplateActions")}
