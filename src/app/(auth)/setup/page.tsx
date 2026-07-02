@@ -12,7 +12,7 @@ export default async function SetupPage() {
   }
 
   return (
-    <AuthCard title="Create the first admin" subtitle="Setup closes after this account exists.">
+    <AuthCard titleKey="auth.setupTitle" subtitleKey="auth.setupSubtitle">
       <SetupForm />
     </AuthCard>
   );

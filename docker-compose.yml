@@ -1,8 +1,9 @@
 services:
   notka:
-    build: .
+    container_name: notka
+    image: ghcr.io/razielel/notka-app:latest
     ports:
-      - "3000:3000"
+      - "${NOTKA_HOST_PORT:-13379}:3000"
     environment:
       DATA_DIR: /data
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET to a long random value before starting Notka}

@@ -17,7 +17,9 @@ import {
 } from "lucide-react";
 import { DragEvent, FormEvent, useMemo, useState } from "react";
 
+import { languages, useI18n } from "@/components/i18n-provider";
 import { formatAlertDeadline, getAlertTone, type AlertTone } from "@/lib/alerts";
+import { translateFolderName } from "@/lib/i18n";
 import { colorThemes, fontChoices, type UserPreferences } from "@/lib/preferences";
 import type { AuthUser, FolderDto, NoteSummaryDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -75,6 +77,7 @@ export function Sidebar({
   onPreferencesChange,
   onLogout,
 }: SidebarProps) {
+  const { language, setLanguage, t } = useI18n();
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
@@ -97,7 +100,7 @@ export function Sidebar({
   }
 
   async function renameFolder(folderId: string, currentName: string) {
-    const name = window.prompt("Rename folder", currentName);
+    const name = window.prompt(t("sidebar.renameFolder"), currentName);
 
     if (name?.trim()) {
       await onRenameFolder(folderId, name);
@@ -105,7 +108,7 @@ export function Sidebar({
   }
 
   async function deleteFolder(folderId: string) {
-    if (window.confirm("Delete this folder and nested folders? Notes inside them will move to Inbox.")) {
+    if (window.confirm(t("sidebar.deleteFolderConfirm"))) {
       await onDeleteFolder(folderId);
     }
   }
@@ -167,8 +170,8 @@ export function Sidebar({
               <button
                 className="group flex min-w-0 items-center gap-1 rounded-xl pr-1 text-left transition hover:text-teal-700 focus:outline-none focus:ring-4 focus:ring-teal-500/10 dark:hover:text-teal-200"
                 type="button"
-                title="Open sections"
-                aria-label="Open sections"
+                title={t("nav.openSections")}
+                aria-label={t("nav.openSections")}
                 aria-expanded={sectionMenuOpen}
                 onClick={() => setSectionMenuOpen((open) => !open)}
               >
@@ -186,7 +189,7 @@ export function Sidebar({
                 <div className="settings-popover absolute left-0 top-[calc(100%+0.65rem)] z-50 w-[min(13rem,calc(100vw-2rem))] rounded-2xl p-2">
                   <AreaMenuItem
                     active={activeArea === "personal"}
-                    label="Personal Notes"
+                    label={t("nav.personalNotes")}
                     onClick={() => {
                       setSectionMenuOpen(false);
                       onAreaChange("personal");
@@ -194,7 +197,7 @@ export function Sidebar({
                   />
                   <AreaMenuItem
                     active={activeArea === "group"}
-                    label="Group Notes"
+                    label={t("nav.groupNotes")}
                     onClick={() => {
                       setSectionMenuOpen(false);
                       onAreaChange("group");
@@ -202,7 +205,7 @@ export function Sidebar({
                   />
                   <AreaMenuItem
                     active={activeArea === "calendar"}
-                    label="Calendar"
+                    label={t("nav.calendar")}
                     onClick={() => {
                       setSectionMenuOpen(false);
                       onAreaChange("calendar");
@@ -215,8 +218,8 @@ export function Sidebar({
               <button
                 className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-rose-400/25 bg-rose-500/15 text-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.28)] transition hover:-translate-y-px hover:bg-rose-500/20 focus:outline-none focus:ring-4 focus:ring-rose-500/15 dark:text-rose-300"
                 type="button"
-                title={`Open alert: ${alertShortcutNote.title}`}
-                aria-label={`Open alert note ${alertShortcutNote.title}`}
+                title={t("nav.openAlert", { title: alertShortcutNote.title })}
+                aria-label={t("nav.openAlertNote", { title: alertShortcutNote.title })}
                 onClick={() => onSelectNote(alertShortcutNote.id)}
               >
                 <AlertTriangle className="h-4 w-4" />
@@ -230,8 +233,8 @@ export function Sidebar({
             <button
               className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/60 hover:text-slate-700 focus:outline-none focus:ring-4 focus:ring-teal-500/10 dark:text-slate-500 dark:hover:bg-white/[0.08] dark:hover:text-slate-200"
               type="button"
-              title="Settings"
-              aria-label="Open settings"
+              title={t("settings.title")}
+              aria-label={t("settings.open")}
               onClick={() => setSettingsOpen((open) => !open)}
             >
               <Settings className="h-3.5 w-3.5" />
@@ -242,8 +245,8 @@ export function Sidebar({
           <button
             className="icon-button"
             type="button"
-            title="Hide sidebar"
-            aria-label="Hide sidebar"
+            title={t("sidebar.hide")}
+            aria-label={t("sidebar.hide")}
             onClick={onCloseSidebar}
           >
             <PanelLeftClose className="h-4 w-4" />
@@ -252,31 +255,48 @@ export function Sidebar({
         {settingsOpen ? (
           <div className="settings-popover fixed inset-x-3 top-24 z-50 max-h-[calc(100dvh-7rem)] overflow-y-auto rounded-2xl p-3 sm:absolute sm:left-0 sm:right-auto sm:top-[calc(100%+0.75rem)] sm:max-h-[min(40rem,calc(100vh-8rem))] sm:w-[min(18rem,calc(100vw-2rem))]">
             <div className="mb-3 px-1">
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">Settings</p>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                {t("settings.title")}
+              </p>
               <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
-                Local display preferences
+                {t("settings.description")}
               </p>
             </div>
 
-            <SettingsRow label="Mode">
+            <SettingsRow label={t("settings.language")}>
               <div className="segmented-control w-full">
-                {(["dark", "light"] as const).map((mode) => (
+                {languages.map((entry) => (
                   <button
-                    key={mode}
+                    key={entry.id}
                     type="button"
                     className={cn(
-                      "segmented-button flex-1 capitalize",
-                      preferences.mode === mode && "segmented-button-active",
+                      "segmented-button flex-1",
+                      language === entry.id && "segmented-button-active",
                     )}
-                    onClick={() => onPreferencesChange({ mode })}
+                    onClick={() => setLanguage(entry.id)}
                   >
-                    {mode}
+                    {entry.label}
                   </button>
                 ))}
               </div>
             </SettingsRow>
 
-            <SettingsRow label="Theme">
+            <SettingsRow label={t("settings.mode")}>
+              <div className="segmented-control w-full">
+                {(["dark", "light"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={cn("segmented-button flex-1", preferences.mode === mode && "segmented-button-active")}
+                    onClick={() => onPreferencesChange({ mode })}
+                  >
+                    {mode === "dark" ? t("settings.dark") : t("settings.light")}
+                  </button>
+                ))}
+              </div>
+            </SettingsRow>
+
+            <SettingsRow label={t("settings.theme")}>
               <select
                 className="notka-input h-10 py-0"
                 value={preferences.colorTheme}
@@ -298,7 +318,7 @@ export function Sidebar({
               </select>
             </SettingsRow>
 
-            <SettingsRow label="Font">
+            <SettingsRow label={t("settings.font")}>
               <select
                 className="notka-input h-10 py-0"
                 value={preferences.font}
@@ -318,25 +338,22 @@ export function Sidebar({
               </select>
             </SettingsRow>
 
-            <SettingsRow label="Sidebar">
+            <SettingsRow label={t("settings.sidebar")}>
               <div className="segmented-control w-full">
                 {(["left", "right"] as const).map((side) => (
                   <button
                     key={side}
                     type="button"
-                    className={cn(
-                      "segmented-button flex-1 capitalize",
-                      preferences.sidebarSide === side && "segmented-button-active",
-                    )}
+                    className={cn("segmented-button flex-1", preferences.sidebarSide === side && "segmented-button-active")}
                     onClick={() => onPreferencesChange({ sidebarSide: side })}
                   >
-                    {side}
+                    {side === "left" ? t("settings.left") : t("settings.right")}
                   </button>
                 ))}
               </div>
             </SettingsRow>
 
-            <SettingsRow label="Custom colors">
+            <SettingsRow label={t("settings.customColors")}>
               <textarea
                 className="notka-input min-h-28 resize-y font-mono text-xs leading-5"
                 value={preferences.customThemeCss}
@@ -355,7 +372,7 @@ export function Sidebar({
                 onClick={onLogout}
               >
                 <LogOut className="h-4 w-4" />
-                Sign out
+                {t("settings.signOut")}
               </button>
             </div>
           </div>
@@ -372,12 +389,12 @@ export function Sidebar({
               className="notka-input pl-9"
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search notes"
+              placeholder={t("sidebar.search")}
             />
           </label>
 
           <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-            <SidebarSection title="Pinned Notes">
+            <SidebarSection title={t("sidebar.pinnedNotes")}>
               {pinnedNotes.length > 0 ? (
                 pinnedNotes.map((note) => (
                   <NoteListItem
@@ -392,18 +409,18 @@ export function Sidebar({
                   />
                 ))
               ) : (
-                <EmptyLine text="No pinned notes" />
+                <EmptyLine text={t("sidebar.noPinnedNotes")} />
               )}
             </SidebarSection>
 
             <SidebarSection
-              title="Folders"
+              title={t("sidebar.folders")}
               action={
                 <button
                   className="icon-button h-8 w-8"
                   type="button"
-                  title="New folder"
-                  aria-label="New folder"
+                  title={t("sidebar.newFolder")}
+                  aria-label={t("sidebar.newFolder")}
                   onClick={() => setNewFolderOpen((open) => !open)}
                 >
                   <FolderPlus className="h-4 w-4" />
@@ -416,11 +433,11 @@ export function Sidebar({
                     className="notka-input h-9"
                     value={newFolderName}
                     onChange={(event) => setNewFolderName(event.target.value)}
-                    placeholder="Folder name"
+                    placeholder={t("sidebar.folderName")}
                     autoFocus
                   />
                   <button className="muted-button h-9 px-3" type="submit">
-                    Add
+                    {t("sidebar.add")}
                   </button>
                 </form>
               ) : null}
@@ -436,7 +453,7 @@ export function Sidebar({
                   onClick={onSelectAllNotes}
                 >
                   <Folder className="h-4 w-4 shrink-0" />
-                  <span className="truncate">All notes</span>
+                  <span className="truncate">{t("sidebar.allNotes")}</span>
                 </button>
                 {folderTree.map((folder) => (
                   <FolderTreeItem
@@ -502,6 +519,7 @@ function FolderTreeItem({
   onDragOverFolder: (folderId: string | null) => void;
   onDropOnFolder: (event: DragEvent<HTMLElement>, targetFolderId: string) => Promise<void>;
 }) {
+  const { language, t } = useI18n();
   const isActive = selectedFolderId === folder.id;
   const isDragOver = dragOverFolderId === folder.id;
   const folderNotes = notesByFolder.get(folder.id) ?? [];
@@ -529,9 +547,11 @@ function FolderTreeItem({
           )}
           style={{ marginLeft: `${folder.depth * 0.9}rem` }}
           type="button"
-          title={isCollapsed ? "Show folder contents" : "Hide folder contents"}
+          title={isCollapsed ? t("sidebar.showFolderContents") : t("sidebar.hideFolderContents")}
           aria-label={
-            isCollapsed ? `Show contents of ${folder.name}` : `Hide contents of ${folder.name}`
+            isCollapsed
+              ? t("sidebar.showContentsOf", { name: translateFolderName(language, folder.name) })
+              : t("sidebar.hideContentsOf", { name: translateFolderName(language, folder.name) })
           }
           aria-expanded={hasContents ? !isCollapsed : undefined}
           disabled={!hasContents}
@@ -552,13 +572,15 @@ function FolderTreeItem({
           onClick={() => onSelectFolder(folder.id)}
         >
           <Folder className="h-4 w-4 shrink-0" />
-          <span className="truncate">{folder.name}</span>
+          <span className="truncate">{translateFolderName(language, folder.name)}</span>
         </button>
         <button
           className="icon-button h-8 w-8 opacity-80 md:opacity-0 md:group-hover:opacity-80"
           type="button"
-          title="Rename folder"
-          aria-label={`Rename ${folder.name}`}
+          title={t("sidebar.renameFolder")}
+          aria-label={t("sidebar.renameFolderLabel", {
+            name: translateFolderName(language, folder.name),
+          })}
           onClick={() => onRenameFolder(folder.id, folder.name)}
         >
           <Pencil className="h-3.5 w-3.5" />
@@ -566,8 +588,10 @@ function FolderTreeItem({
         <button
           className="icon-button h-8 w-8 opacity-80 md:opacity-0 md:group-hover:opacity-80"
           type="button"
-          title="Delete folder"
-          aria-label={`Delete ${folder.name}`}
+          title={t("sidebar.deleteFolder")}
+          aria-label={t("sidebar.deleteFolderLabel", {
+            name: translateFolderName(language, folder.name),
+          })}
           onClick={() => onDeleteFolder(folder.id)}
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -736,8 +760,9 @@ function TreeNoteItem({
   depth: number;
   onClick: () => void;
 }) {
+  const { language, t } = useI18n();
   const alertTone = getAlertTone(note.alertAt);
-  const alertLabel = formatAlertDeadline(note.alertAt);
+  const alertLabel = formatAlertDeadline(note.alertAt, language);
 
   return (
     <button
@@ -746,7 +771,7 @@ function TreeNoteItem({
         noteAlertClass(alertTone),
         active && "sidebar-item-active",
       )}
-      title={alertLabel ? `Deadline ${alertLabel}` : undefined}
+      title={alertLabel ? t("editor.deadlineTitle", { date: alertLabel }) : undefined}
       style={{ paddingLeft: `${1.65 + depth * 0.9}rem` }}
       type="button"
       draggable
@@ -788,8 +813,9 @@ function NoteListItem({
   onDragStart?: (event: DragEvent<HTMLButtonElement>) => void;
   onClick: () => void;
 }) {
+  const { language, t } = useI18n();
   const alertTone = getAlertTone(note.alertAt);
-  const alertLabel = formatAlertDeadline(note.alertAt);
+  const alertLabel = formatAlertDeadline(note.alertAt, language);
 
   return (
     <button
@@ -798,7 +824,7 @@ function NoteListItem({
         noteAlertClass(alertTone),
         active && "sidebar-item-active",
       )}
-      title={alertLabel ? `Deadline ${alertLabel}` : undefined}
+      title={alertLabel ? t("editor.deadlineTitle", { date: alertLabel }) : undefined}
       type="button"
       draggable={Boolean(onDragStart)}
       onDragStart={onDragStart}

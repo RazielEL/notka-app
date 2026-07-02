@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import "@/app/globals.css";
+import { I18nProvider } from "@/components/i18n-provider";
 
 export const metadata: Metadata = {
   applicationName: "Notka",
@@ -43,6 +44,10 @@ export default function RootLayout({
                 try {
                   var mode = localStorage.getItem("notka-mode");
                   var dark = mode ? mode === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+                  var storedLanguage = localStorage.getItem("notka-language");
+                  var language = storedLanguage === "en" || storedLanguage === "pl"
+                    ? storedLanguage
+                    : ((navigator.language || "").toLowerCase().startsWith("pl") ? "pl" : "en");
                   var palette = localStorage.getItem("notka-color-theme") || "dark-navy";
                   var font = localStorage.getItem("notka-font") || "system";
                   var customCss = (localStorage.getItem("notka-custom-theme-css") || "")
@@ -56,6 +61,7 @@ export default function RootLayout({
                     .map(function (entry) { return entry + ";"; })
                     .join("\\n");
                   document.documentElement.classList.toggle("dark", dark);
+                  document.documentElement.lang = language;
                   document.documentElement.dataset.theme = palette;
                   document.documentElement.dataset.appFont = font;
                   if (customCss) {
@@ -69,7 +75,7 @@ export default function RootLayout({
             `,
           }}
         />
-        {children}
+        <I18nProvider>{children}</I18nProvider>
       </body>
     </html>
   );

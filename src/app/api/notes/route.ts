@@ -38,6 +38,7 @@ export async function POST(request: Request) {
       title: body.title,
       content: body.content,
       scope: body.scope,
+      language: body.language,
     });
 
     return NextResponse.json({ note }, { status: 201 });

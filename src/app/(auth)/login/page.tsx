@@ -17,7 +17,7 @@ export default async function LoginPage() {
   }
 
   return (
-    <AuthCard title="Welcome back" subtitle="Sign in to your private notebook.">
+    <AuthCard titleKey="auth.loginTitle" subtitleKey="auth.loginSubtitle">
       <LoginForm />
     </AuthCard>
   );

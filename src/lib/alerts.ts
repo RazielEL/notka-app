@@ -1,3 +1,5 @@
+import { localeForLanguage, type Language } from "@/lib/i18n";
+
 export type AlertTone = "none" | "neon" | "yellow" | "red";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -34,7 +36,7 @@ export function isActiveAlert(alertAt: string | null | undefined, now = new Date
   return getAlertTone(alertAt, now) !== "none";
 }
 
-export function formatAlertDeadline(alertAt: string | null | undefined) {
+export function formatAlertDeadline(alertAt: string | null | undefined, language: Language = "en") {
   if (!alertAt) {
     return "";
   }
@@ -45,7 +47,7 @@ export function formatAlertDeadline(alertAt: string | null | undefined) {
     return "";
   }
 
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(localeForLanguage(language), {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(deadline);

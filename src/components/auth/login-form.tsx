@@ -5,10 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
+import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
+import { translateApiError } from "@/lib/i18n";
 
 export function LoginForm() {
   const router = useRouter();
+  const { language, t } = useI18n();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -31,7 +34,7 @@ export function LoginForm() {
     setLoading(false);
 
     if (!response.ok) {
-      setError(body.error ?? "Could not sign in.");
+      setError(translateApiError(language, body.error, "auth.loginError"));
       return;
     }
 
@@ -43,13 +46,13 @@ export function LoginForm() {
     <form className="space-y-4" onSubmit={onSubmit}>
       <label className="block">
         <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
-          Email
+          {t("auth.email")}
         </span>
         <input className="notka-input" type="email" name="email" autoComplete="email" required />
       </label>
       <label className="block">
         <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
-          Password
+          {t("auth.password")}
         </span>
         <input
           className="notka-input"
@@ -62,12 +65,12 @@ export function LoginForm() {
       {error ? <p className="text-sm text-rose-600 dark:text-rose-300">{error}</p> : null}
       <Button className="w-full" type="submit" variant="primary" disabled={loading}>
         <LogIn className="h-4 w-4" />
-        {loading ? "Signing in" : "Sign in"}
+        {loading ? t("auth.signingIn") : t("auth.signIn")}
       </Button>
       <p className="text-center text-sm text-slate-500 dark:text-slate-400">
-        Need an account?{" "}
+        {t("auth.needAccount")}{" "}
         <Link className="font-semibold text-teal-700 hover:text-teal-600 dark:text-teal-300" href="/register">
-          Create one
+          {t("auth.createOne")}
         </Link>
       </p>
     </form>

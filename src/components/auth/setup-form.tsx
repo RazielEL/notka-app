@@ -4,10 +4,13 @@ import { ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
+import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
+import { translateApiError } from "@/lib/i18n";
 
 export function SetupForm() {
   const router = useRouter();
+  const { language, t } = useI18n();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -24,6 +27,7 @@ export function SetupForm() {
         email: formData.get("email"),
         displayName: formData.get("displayName"),
         password: formData.get("password"),
+        language,
       }),
     });
 
@@ -31,7 +35,7 @@ export function SetupForm() {
     setLoading(false);
 
     if (!response.ok) {
-      setError(body.error ?? "Could not finish setup.");
+      setError(translateApiError(language, body.error, "auth.setupError"));
       return;
     }
 
@@ -43,7 +47,7 @@ export function SetupForm() {
     <form className="space-y-4" onSubmit={onSubmit}>
       <label className="block">
         <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
-          Name
+          {t("auth.name")}
         </span>
         <input
           className="notka-input"
@@ -55,13 +59,13 @@ export function SetupForm() {
       </label>
       <label className="block">
         <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
-          Email
+          {t("auth.email")}
         </span>
         <input className="notka-input" type="email" name="email" autoComplete="email" required />
       </label>
       <label className="block">
         <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
-          Password
+          {t("auth.password")}
         </span>
         <input
           className="notka-input"
@@ -75,7 +79,7 @@ export function SetupForm() {
       {error ? <p className="text-sm text-rose-600 dark:text-rose-300">{error}</p> : null}
       <Button className="w-full" type="submit" variant="primary" disabled={loading}>
         <ShieldCheck className="h-4 w-4" />
-        {loading ? "Creating admin" : "Create admin"}
+        {loading ? t("auth.creatingAdmin") : t("auth.createAdmin")}
       </Button>
     </form>
   );

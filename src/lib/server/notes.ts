@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 
 import { getDb } from "@/db";
 import { folders, notes } from "@/db/schema";
+import { normalizeLanguage } from "@/lib/i18n";
 import { extractMarkdownMetadata, titleFromContent } from "@/lib/markdown/metadata";
 import { ensureInboxFolder, getFolderForUser } from "@/lib/server/folders";
 import { getTemplateBody } from "@/lib/server/templates";
@@ -94,8 +95,10 @@ export async function createNote(ownerUserId: string, input: {
   title?: unknown;
   content?: unknown;
   scope?: unknown;
+  language?: unknown;
 }) {
   const scope = normalizeScope(input.scope);
+  const language = normalizeLanguage(input.language);
   const folder =
     typeof input.folderId === "string" && input.folderId.length > 0
       ? await getFolderForUser(ownerUserId, input.folderId, scope)
@@ -104,11 +107,11 @@ export async function createNote(ownerUserId: string, input: {
   let content = normalizeContent(input.content);
 
   if (!content && typeof input.templateId === "string" && input.templateId.length > 0) {
-    content = await getTemplateBody(ownerUserId, input.templateId);
+    content = await getTemplateBody(ownerUserId, input.templateId, language);
   }
 
   if (!content) {
-    content = "# Untitled note\n\n";
+    content = language === "pl" ? "# Notatka bez tytułu\n\n" : "# Untitled note\n\n";
   }
 
   const id = randomUUID();

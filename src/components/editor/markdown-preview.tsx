@@ -3,6 +3,7 @@
 import { Check } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { useI18n } from "@/components/i18n-provider";
 import { cn } from "@/lib/utils";
 
 type MarkdownPreviewProps = {
@@ -19,12 +20,13 @@ type Block =
   | { type: "rule"; key: string };
 
 export function MarkdownPreview({ content, onToggleCheckbox }: MarkdownPreviewProps) {
+  const { t } = useI18n();
   const blocks = parseMarkdown(content);
 
   if (blocks.length === 0) {
     return (
       <div className="flex h-full min-h-64 items-center justify-center rounded-2xl border border-dashed border-black/[0.08] p-6 text-sm text-slate-400 dark:border-white/[0.08] dark:text-slate-500">
-        Nothing to preview yet.
+        {t("editor.nothingToPreview")}
       </div>
     );
   }
@@ -73,7 +75,7 @@ export function MarkdownPreview({ content, onToggleCheckbox }: MarkdownPreviewPr
                   block.checked && "text-slate-400 line-through decoration-slate-400/70 dark:text-slate-500",
                 )}
               >
-                {renderInline(block.text || "Untitled task")}
+                {renderInline(block.text || t("editor.untitledTask"))}
               </span>
             </button>
           );

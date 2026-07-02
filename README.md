@@ -1,28 +1,180 @@
 # Notka
 
-Notka is a minimal self-hosted Markdown notes app with checklist support. Notes and checklists are the same thing: a checklist is just Markdown containing `- [ ]` and `- [x]`.
+Notka is a minimal self-hosted notes app for Markdown notes, checklists, shared group notes, alerts, calendar planning, and simple everyday organization.
 
-## What is included
+It is built for private self-hosted use, with Docker-first deployment and persistent local storage.
 
-- Next.js App Router, TypeScript, Tailwind CSS
-- SQLite metadata at `/data/app.db`
-- Drizzle schema and initial migration
-- Personal Markdown note files at `/data/notes/{userId}/{noteId}.md`
-- Group Markdown note files at `/data/notes/group/{noteId}.md`
-- Deleted personal note files moved to `/data/trash/{userId}/{noteId}.md`
-- Deleted group note files moved to `/data/trash/group/{noteId}.md`
-- Template files at `/data/templates/{userId}/{templateId}.md`
-- First-run admin setup
-- Public account registration after first setup
-- Email/password login with bcrypt password hashes
-- Signed HTTP-only session cookies
-- Folder CRUD, note CRUD, pin/unpin, checklist progress, title/excerpt indexing
-- Personal Notes plus simple shared Group Notes for all authenticated users
-- Built-in templates plus user templates
-- Light/dark theme
-- Dockerfile and docker-compose.yml
+Notes and checklists are the same thing: a checklist is just Markdown using `- [ ]` and `- [x]`.
 
-## Local development
+## Features
+
+- Markdown notes with live preview
+- Checklist support with progress indicators
+- Personal notes
+- Shared group notes for all registered users
+- Folder organization with nested folders
+- Pinned notes
+- Built-in templates and custom templates
+- Note alerts and calendar view
+- English and Polish interface
+- Light and dark mode
+- Multiple color themes
+- Font preferences
+- Responsive desktop and mobile layout
+- PWA manifest support
+- SQLite metadata with Markdown files on disk
+- Docker Compose deployment
+
+## Quick Start With Docker
+
+Create a `docker-compose.yml` file:
+
+```yaml
+services:
+  notka:
+    image: ghcr.io/razielel/notka-app:latest
+    container_name: notka
+    restart: unless-stopped
+    ports:
+      - "13379:3000"
+    environment:
+      DATA_DIR: /data
+      SESSION_SECRET: "replace-with-a-long-random-secret"
+      SESSION_COOKIE_SECURE: "false"
+    volumes:
+      - ./data:/data
+```
+
+Start Notka:
+
+```bash
+docker compose up -d
+```
+
+Open:
+
+```text
+http://localhost:13379
+```
+
+On first launch, Notka will guide you through creating the first admin account.
+
+## Session Secret
+
+`SESSION_SECRET` is required for Docker and production. Generate a long stable value:
+
+```bash
+openssl rand -base64 48
+```
+
+Put it in your compose file or `.env` file:
+
+```env
+SESSION_SECRET=your-long-random-secret
+```
+
+Keep this value stable across restarts. Changing it will invalidate existing sessions.
+
+## Using An Env File
+
+Instead of putting environment variables directly in `docker-compose.yml`, you can use `.env`:
+
+```env
+NOTKA_HOST_PORT=13379
+SESSION_SECRET=your-long-random-secret
+SESSION_COOKIE_SECURE=false
+DATA_DIR=/data
+```
+
+Example compose file:
+
+```yaml
+services:
+  notka:
+    image: ghcr.io/razielel/notka-app:latest
+    container_name: notka
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${NOTKA_HOST_PORT:-13379}:3000"
+    volumes:
+      - ./data:/data
+```
+
+## Tailscale Or Private Network Deployment
+
+Notka is designed to work well behind a private network such as Tailscale.
+
+For a private HTTP deployment over Tailscale, keep:
+
+```env
+SESSION_COOKIE_SECURE=false
+```
+
+If you serve Notka through HTTPS, set:
+
+```env
+SESSION_COOKIE_SECURE=true
+```
+
+To bind Notka only to a Tailscale IP, use:
+
+```yaml
+ports:
+  - "100.x.y.z:13379:3000"
+```
+
+Replace `100.x.y.z` with your server's Tailscale IP.
+
+## Data Storage
+
+All persistent data lives in the mounted `/data` directory.
+
+This includes:
+
+- SQLite database
+- Markdown note files
+- Deleted notes
+- Templates
+- App metadata
+
+With the default Docker Compose setup, this is stored on the host in:
+
+```text
+./data
+```
+
+Do not mount or serve `./data` through a web server. It contains SQLite data, Markdown files, trash, templates, and session metadata.
+
+## Backup
+
+Recommended simple backup flow:
+
+```bash
+docker compose down
+tar -czf notka-data-backup-$(date +%F).tar.gz ./data
+docker compose up -d
+```
+
+Back up the whole `data/` directory together so `app.db`, `app.db-wal`, Markdown notes, trash, and templates stay consistent.
+
+## Updating
+
+Pull the newest image and restart:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Optionally clean old images:
+
+```bash
+docker image prune -f
+```
+
+## Local Development
 
 ```bash
 pnpm install
@@ -30,82 +182,65 @@ cp .env.example .env.local
 pnpm dev
 ```
 
-Open `http://localhost:3000`. On first launch, Notka shows the setup screen and creates the first admin user, an Inbox folder, and a welcome note.
-
-The development script stores local data in `./data`. In Docker and production, set `DATA_DIR=/data`; the included compose file already does this.
-
-To reset local development data, run:
-
-```bash
-pnpm db:reset:dev -- --yes
-```
-
-This is destructive. It removes `./data`, including the local SQLite database and Markdown files. Do not run it against data you want to keep.
-
-## Environment variables
-
-Copy `.env.example` for local reference. Do not commit real `.env` files.
+Open:
 
 ```text
-SESSION_SECRET          Required in Docker/production. Keep stable across restarts.
-SESSION_COOKIE_SECURE   Set to true only when serving Notka over HTTPS.
-DATA_DIR                Persistent data directory. Docker uses /data.
-SQLITE_DB_PATH          Optional override. Defaults to $DATA_DIR/app.db.
+http://localhost:3000
 ```
 
-## Docker
+The development script stores local data in `./data`. Docker and production use `DATA_DIR=/data`.
 
-```bash
-export SESSION_SECRET="$(openssl rand -base64 48)"
-docker compose up --build
-```
-
-The compose file mounts `./data` to `/data`, so all persistent app data lives in one directory:
-
-```text
-data/
-  app.db
-  notes/
-  trash/
-  templates/
-```
-
-`SESSION_SECRET` is required for Docker/production. Use a long random value and keep it stable across restarts, otherwise existing sessions will be invalidated. Notka is intended to sit behind your private network/Tailscale, but app-level login is still required.
-
-By default, session cookies are HTTP-only and `SameSite=Lax`, with `Secure=false` so private HTTP deployments over Tailscale work. If you serve Notka over HTTPS, set:
-
-```bash
-export SESSION_COOKIE_SECURE=true
-```
-
-Do not mount or serve `./data` through a web server. It contains SQLite data plus Markdown files.
-
-Back up the whole `data/` directory together while the app is stopped, or use a filesystem/database-aware snapshot so `app.db`, `app.db-wal`, Markdown notes, trash, and templates stay consistent.
-
-`./data`, SQLite database files, build output, dependencies, and real environment files are ignored by git and Docker build context. `.env.example` is intentionally kept.
-
-## Data model
-
-SQLite stores users, sessions, folders, templates, and note indexes. Markdown bodies are stored as files on disk. The client never sends file paths; route handlers accept IDs only, verify ownership in SQLite, and resolve server-controlled paths under `/data`.
-
-After the first admin setup, anyone with access to the self-hosted Notka instance can register an account from the login screen.
-
-Group Notes use the same note and folder tables with `scope = 'group'`. Every registered user can view and edit Group Notes. Group pins are shared globally for now. Templates remain personal; creating a group note from a personal template is supported, while shared group templates are not part of this release.
-
-## Security and MVP limits
-
-- Notka is designed for a private network or Tailscale-style deployment, with app login still enabled. This is the recommended deployment model.
-- Public internet exposure should use HTTPS, `SESSION_COOKIE_SECURE=true`, reverse-proxy hardening, request size limits, monitoring, and stronger abuse protection.
-- Login does not include persistent rate limiting yet. Put the app behind a private network and avoid exposing it directly to the public internet.
-- Note edits are last-write-wins. Two browser tabs or two users editing the same Group Note at the same time can overwrite each other. Note save/delete operations are serialized per note inside a single app process, but there is no multi-user merge UI yet.
-- Markdown file writes are atomic, but SQLite and filesystem writes are not one distributed transaction. The app rolls back practical partial failures, and backups should include the whole `data/` directory consistently.
-- If a Markdown file is missing while its SQLite index row still exists, the app currently opens it as empty content. Treat that as operational data corruption and restore from backup.
-
-## Useful scripts
+## Useful Scripts
 
 ```bash
 pnpm dev       # start the development server
 pnpm build     # production build
 pnpm start     # start a production server after build
 pnpm lint      # run Next.js linting
+pnpm typecheck # run TypeScript checks
 ```
+
+Reset local development data:
+
+```bash
+pnpm db:reset:dev -- --yes
+```
+
+This is destructive. It removes local app data, including notes and the SQLite database.
+
+## Security Notes
+
+Notka is intended for private self-hosted use.
+
+Recommended setup:
+
+- Run it behind Tailscale or another private network
+- Keep app login enabled
+- Use HTTPS if exposing it through a public domain
+- Set `SESSION_COOKIE_SECURE=true` when using HTTPS
+- Do not serve the `data/` directory directly
+- Back up the entire `data/` directory consistently
+
+Public internet exposure should use additional hardening such as HTTPS, reverse proxy protection, request limits, monitoring, and stronger abuse protection.
+
+## Current Limitations
+
+- Group Notes are shared with all registered users on the instance.
+- Note edits are currently last-write-wins.
+- There is no real-time collaborative editing.
+- Registration is available to anyone who can access the instance after first setup.
+- Notka is designed for private self-hosted environments, not public SaaS-style hosting.
+
+## Tech Stack
+
+- Next.js
+- TypeScript
+- Tailwind CSS
+- SQLite
+- Drizzle ORM
+- Markdown files
+- Docker
+
+## License
+
+TBD

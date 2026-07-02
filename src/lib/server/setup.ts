@@ -1,6 +1,7 @@
 import "server-only";
 
 import { assertSessionConfiguration, createSession } from "@/lib/auth/session";
+import { getWelcomeNote, normalizeLanguage } from "@/lib/i18n";
 import { createNote } from "@/lib/server/notes";
 import { createAdminUser, hasUsers } from "@/lib/server/users";
 
@@ -8,6 +9,7 @@ export async function runFirstSetup(input: {
   email: unknown;
   displayName: unknown;
   password: unknown;
+  language?: unknown;
 }) {
   assertSessionConfiguration();
 
@@ -16,11 +18,13 @@ export async function runFirstSetup(input: {
   }
 
   const user = await createAdminUser(input);
+  const language = normalizeLanguage(input.language);
+  const welcomeNote = getWelcomeNote(language);
 
   await createNote(user.id, {
-    title: "Welcome to Notka",
-    content:
-      "# Welcome to Notka\n\nThis is your private Markdown notebook.\n\n- [x] Create the first admin user\n- [ ] Write a note\n- [ ] Keep a checklist in Markdown\n\nNotes and checklists live together here. A checklist is just Markdown.\n",
+    title: welcomeNote.title,
+    content: welcomeNote.content,
+    language,
   });
 
   await createSession(user.id);

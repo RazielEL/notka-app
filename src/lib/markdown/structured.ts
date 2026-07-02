@@ -18,8 +18,21 @@ export type StructuredNote =
   | { kind: "table"; title: string; table: TableData }
   | null;
 
+export type StructuredMarkdownLabels = {
+  checklist: string;
+  table: string;
+  column: (number: number) => string;
+  category: (number: number) => string;
+};
+
 const CHECKLIST_MARKER = "<!-- notka:type=checklist -->";
 const TABLE_MARKER = "<!-- notka:type=table -->";
+const defaultLabels: StructuredMarkdownLabels = {
+  checklist: "Checklist",
+  table: "Table",
+  column: (number) => `Column ${number}`,
+  category: (number) => `Category ${number}`,
+};
 
 export function parseStructuredNote(content: string): StructuredNote {
   const normalized = content.replace(/\r\n/g, "\n");
@@ -39,23 +52,31 @@ export function parseStructuredNote(content: string): StructuredNote {
   return null;
 }
 
-export function buildChecklistMarkdown(title: string, categories: ChecklistCategory[]) {
-  const normalizedCategories = normalizeChecklistCategories(categories);
+export function buildChecklistMarkdown(
+  title: string,
+  categories: ChecklistCategory[],
+  labels: StructuredMarkdownLabels = defaultLabels,
+) {
+  const normalizedCategories = normalizeChecklistCategories(categories, labels);
   const body = normalizedCategories
     .map((category) => {
       const items = category.items
         .map((item) => `- [${item.checked ? "x" : " "}] ${item.text}`)
         .join("\n");
 
-      return `## ${cleanTitle(category.name, "Checklist")}\n${items}`;
+      return `## ${cleanTitle(category.name, labels.checklist)}\n${items}`;
     })
     .join("\n\n");
 
-  return `${CHECKLIST_MARKER}\n# ${cleanTitle(title, "Checklist")}\n\n${body}\n`;
+  return `${CHECKLIST_MARKER}\n# ${cleanTitle(title, labels.checklist)}\n\n${body}\n`;
 }
 
-export function buildTableMarkdown(title: string, table: TableData) {
-  const headers = table.headers.length > 0 ? table.headers : ["Column 1"];
+export function buildTableMarkdown(
+  title: string,
+  table: TableData,
+  labels: StructuredMarkdownLabels = defaultLabels,
+) {
+  const headers = table.headers.length > 0 ? table.headers : [labels.column(1)];
   const rows = table.rows.length > 0 ? table.rows : [headers.map(() => "")];
   const headerLine = `| ${headers.map(escapeTableCell).join(" | ")} |`;
   const dividerLine = `| ${headers.map(() => "---").join(" | ")} |`;
@@ -64,7 +85,7 @@ export function buildTableMarkdown(title: string, table: TableData) {
     return `| ${cells.join(" | ")} |`;
   });
 
-  return `${TABLE_MARKER}\n# ${cleanTitle(title, "Table")}\n\n${[
+  return `${TABLE_MARKER}\n# ${cleanTitle(title, labels.table)}\n\n${[
     headerLine,
     dividerLine,
     ...rowLines,
@@ -153,15 +174,18 @@ function isPureChecklist(content: string) {
   return meaningfulLines.slice(1).every((line) => /^[-*]\s+\[[ xX]\]\s*/.test(line));
 }
 
-function normalizeChecklistCategories(categories: ChecklistCategory[]) {
+function normalizeChecklistCategories(
+  categories: ChecklistCategory[],
+  labels: StructuredMarkdownLabels = defaultLabels,
+) {
   const normalized = categories.map((category, index) => ({
-    name: cleanTitle(category.name, index === 0 ? "Checklist" : `Category ${index + 1}`),
+    name: cleanTitle(category.name, index === 0 ? labels.checklist : labels.category(index + 1)),
     items: category.items,
   }));
 
   return normalized.length > 0
     ? normalized
-    : [{ name: "Checklist", items: [{ checked: false, text: "" }] }];
+    : [{ name: labels.checklist, items: [{ checked: false, text: "" }] }];
 }
 
 function extractTitle(content: string, fallback: string) {

@@ -6,6 +6,11 @@ import { randomUUID } from "node:crypto";
 import { getDb } from "@/db";
 import { templates } from "@/db/schema";
 import {
+  getBuiltInTemplateBody,
+  translateBuiltInTemplateName,
+  type Language,
+} from "@/lib/i18n";
+import {
   readMarkdownFile,
   removeMarkdownFile,
   templateRelativePath,
@@ -18,10 +23,10 @@ const BUILT_IN_TEMPLATE_IDS = ["blank", "checklist", "table", "daily"] as const;
 type BuiltInTemplateId = (typeof BUILT_IN_TEMPLATE_IDS)[number];
 
 export const BUILT_IN_TEMPLATES: Array<TemplateDto> = [
-  { id: "blank", name: "Blank note", builtIn: true },
-  { id: "checklist", name: "Checklist", builtIn: true },
-  { id: "table", name: "Table", builtIn: true },
-  { id: "daily", name: "Daily note", builtIn: true },
+  { id: "blank", name: translateBuiltInTemplateName("en", "blank"), builtIn: true },
+  { id: "checklist", name: translateBuiltInTemplateName("en", "checklist"), builtIn: true },
+  { id: "table", name: translateBuiltInTemplateName("en", "table"), builtIn: true },
+  { id: "daily", name: translateBuiltInTemplateName("en", "daily"), builtIn: true },
 ];
 
 export async function listTemplates(ownerUserId: string) {
@@ -75,11 +80,15 @@ export async function createTemplateFromContent(ownerUserId: string, nameInput: 
   } satisfies TemplateDto;
 }
 
-export async function getTemplateBody(ownerUserId: string, templateIdInput: unknown) {
+export async function getTemplateBody(
+  ownerUserId: string,
+  templateIdInput: unknown,
+  language: Language = "en",
+) {
   const templateId = assertSafeId(templateIdInput, "template id");
 
   if (isBuiltInTemplateId(templateId)) {
-    return getBuiltInTemplateBody(templateId);
+    return getBuiltInTemplateBody(templateId, language);
   }
 
   const rows = await getDb()
@@ -99,21 +108,4 @@ export async function getTemplateBody(ownerUserId: string, templateIdInput: unkn
 
 function isBuiltInTemplateId(value: string): value is BuiltInTemplateId {
   return BUILT_IN_TEMPLATE_IDS.includes(value as BuiltInTemplateId);
-}
-
-function getBuiltInTemplateBody(templateId: BuiltInTemplateId) {
-  if (templateId === "checklist") {
-    return "<!-- notka:type=checklist -->\n# Checklist\n\n- [ ] First item\n- [ ] Second item\n- [ ] Third item\n";
-  }
-
-  if (templateId === "table") {
-    return "<!-- notka:type=table -->\n# Table\n\n| Column 1 | Column 2 |\n| --- | --- |\n|  |  |\n";
-  }
-
-  if (templateId === "daily") {
-    const today = new Date().toLocaleDateString("en-CA");
-    return `# ${today}\n\n## Notes\n\n\n## Checklist\n\n- [ ] \n`;
-  }
-
-  return "# Untitled note\n\n";
 }

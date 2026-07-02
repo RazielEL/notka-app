@@ -14,10 +14,12 @@ import {
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useI18n } from "@/components/i18n-provider";
 import { Sidebar } from "@/components/app-shell/sidebar";
 import { NoteEditor } from "@/components/editor/note-editor";
 import { Button } from "@/components/ui/button";
 import { formatAlertDeadline, getAlertTone, type AlertTone } from "@/lib/alerts";
+import { localeForLanguage, translateFolderName, type Language } from "@/lib/i18n";
 import {
   defaultPreferences,
   isColorThemeId,
@@ -54,6 +56,7 @@ export function NotkaApp({
   defaultFolderId,
 }: NotkaAppProps) {
   const router = useRouter();
+  const { language, t } = useI18n();
   const [folders, setFolders] = useState(initialFolders);
   const [notes, setNotes] = useState(initialNotes);
   const [templates, setTemplates] = useState(initialTemplates);
@@ -337,6 +340,7 @@ export function NotkaApp({
         folderId: selectedFolderId ?? undefined,
         templateId,
         scope: currentScope,
+        language,
       }),
     });
     const body = await response.json().catch(() => ({}));
@@ -450,8 +454,10 @@ export function NotkaApp({
   }
 
   async function createTemplate(noteId: string) {
-    const fallback = selectedNote?.title ? `${selectedNote.title} template` : "Template";
-    const name = window.prompt("Template name", fallback);
+    const fallback = selectedNote?.title
+      ? t("editor.templateSuffix", { title: selectedNote.title })
+      : t("editor.templateFallback");
+    const name = window.prompt(t("editor.templateName"), fallback);
 
     if (!name?.trim()) {
       return;
@@ -518,7 +524,7 @@ export function NotkaApp({
 
     if (
       editorHasUnsavedChanges &&
-      !window.confirm("You have unsaved changes. Switch areas anyway?")
+      !window.confirm(t("confirm.unsavedSwitch"))
     ) {
       return;
     }
@@ -556,13 +562,15 @@ export function NotkaApp({
 
   const selectedFolder = folders.find((folder) => folder.id === selectedFolderId);
   const selectedFolderPath =
-    selectedFolderId === null ? "/All notes" : buildFolderPath(folders, selectedFolderId);
+    selectedFolderId === null
+      ? `/${t("sidebar.allNotes")}`
+      : buildFolderPath(folders, selectedFolderId, language);
   const sidebarPanel = sidebarOpen ? (
     <>
       <button
         className="fixed inset-0 z-30 bg-slate-950/35 backdrop-blur-sm md:hidden"
         type="button"
-        aria-label="Close sidebar"
+        aria-label={t("sidebar.close")}
         onClick={() => setSidebarOpen(false)}
       />
       <div
@@ -615,7 +623,7 @@ export function NotkaApp({
           key={selectedNote.id}
           note={selectedNote}
           scope={currentScope}
-          folderPath={buildFolderPath(folders, selectedNote.folderId)}
+          folderPath={buildFolderPath(folders, selectedNote.folderId, language)}
           templates={templates}
           onSaved={handleSaved}
           onDeleted={handleDeleted}
@@ -625,10 +633,16 @@ export function NotkaApp({
         />
       ) : (
         <FolderOverview
-          areaLabel={activeArea === "group" ? "Group Notes" : "Personal Notes"}
-          title={selectedFolderId === null ? "All notes" : selectedFolder?.name ?? "Inbox"}
+          areaLabel={activeArea === "group" ? t("nav.groupNotes") : t("nav.personalNotes")}
+          title={
+            selectedFolderId === null
+              ? t("sidebar.allNotes")
+              : selectedFolder
+                ? translateFolderName(language, selectedFolder.name)
+                : t("folder.inbox")
+          }
           path={selectedFolderPath}
-          emptyText={activeArea === "group" ? "No group notes yet" : "No notes here yet."}
+          emptyText={activeArea === "group" ? t("overview.noGroupNotes") : t("overview.noNotes")}
           groupUsers={activeArea === "group" ? groupUsers : []}
           notes={filtered.notes}
           onCreateNote={() => void createNote()}
@@ -647,8 +661,8 @@ export function NotkaApp({
             preferences.sidebarSide === "right" ? "right-4" : "left-4",
           )}
           type="button"
-          title="Show sidebar"
-          aria-label="Show sidebar"
+          title={t("sidebar.show")}
+          aria-label={t("sidebar.show")}
           onClick={() => setSidebarOpen(true)}
         >
           <PanelLeftOpen className="h-4 w-4" />
@@ -696,6 +710,8 @@ function FolderOverview({
   onCreateNote: () => void;
   onSelectNote: (noteId: string) => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <section className="glass-panel flex min-h-[28rem] flex-col rounded-2xl p-5">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-black/[0.06] pb-4 dark:border-white/[0.08]">
@@ -713,7 +729,7 @@ function FolderOverview({
           {groupUsers.length > 0 ? <GroupAudience users={groupUsers} /> : null}
           <Button type="button" variant="primary" onClick={onCreateNote}>
             <Plus className="h-4 w-4" />
-            New note
+            {t("overview.newNote")}
           </Button>
         </div>
       </header>
@@ -755,6 +771,7 @@ function CalendarView({
   onShowGroupNotesChange: (show: boolean) => void;
   onSelectNote: (note: NoteSummaryDto) => void;
 }) {
+  const { language, t } = useI18n();
   const entries = useMemo(() => buildCalendarEntries(notes), [notes]);
   const days = useMemo(() => buildCalendarDays(month), [month]);
   const entriesByDay = useMemo(() => {
@@ -787,7 +804,7 @@ function CalendarView({
             <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-teal-500/15 bg-teal-500/10 text-teal-700 dark:text-teal-300">
               <CalendarDays className="h-5 w-5" />
             </span>
-            Calendar
+            {t("calendar.title")}
           </h1>
         </div>
         <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 sm:flex sm:flex-wrap sm:items-center">
@@ -802,24 +819,24 @@ function CalendarView({
             onClick={() => onShowGroupNotesChange(!showGroupNotes)}
           >
             <Users className="h-4 w-4" />
-            Show Group Notes
+            {t("calendar.showGroupNotes")}
           </Button>
           <Button
             type="button"
-            title="Previous month"
-            aria-label="Previous month"
+            title={t("calendar.previousMonth")}
+            aria-label={t("calendar.previousMonth")}
             className="h-10 px-3"
             onClick={() => onMonthChange(addMonths(month, -1))}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <Button type="button" className="h-10 px-3" onClick={() => onMonthChange(startOfMonth(new Date()))}>
-            Today
+            {t("calendar.today")}
           </Button>
           <Button
             type="button"
-            title="Next month"
-            aria-label="Next month"
+            title={t("calendar.nextMonth")}
+            aria-label={t("calendar.nextMonth")}
             className="h-10 px-3"
             onClick={() => onMonthChange(addMonths(month, 1))}
           >
@@ -832,12 +849,12 @@ function CalendarView({
         <div className="min-w-0 overflow-hidden rounded-2xl border border-black/[0.08] bg-white/35 shadow-sm shadow-slate-950/[0.03] dark:border-white/[0.08] dark:bg-white/[0.035] dark:shadow-black/10">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/[0.06] px-4 py-3 dark:border-white/[0.08]">
             <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-              {formatMonth(month)}
+              {formatMonth(month, language)}
             </h2>
             <div className="flex items-center gap-2 text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
-              <CalendarLegend tone="green" label="OK" />
-              <CalendarLegend tone="yellow" label="Soon" />
-              <CalendarLegend tone="red" label="Due" />
+              <CalendarLegend tone="green" label={t("calendar.ok")} />
+              <CalendarLegend tone="yellow" label={t("calendar.soon")} />
+              <CalendarLegend tone="red" label={t("calendar.due")} />
             </div>
           </div>
           <div className="block divide-y divide-black/[0.06] p-2 dark:divide-white/[0.07] md:hidden">
@@ -858,7 +875,7 @@ function CalendarView({
                       {day.getDate()}
                     </div>
                     <div className="mt-1 text-[11px] font-semibold uppercase text-slate-400 dark:text-slate-500">
-                      {formatWeekday(day)}
+                      {formatWeekday(day, language)}
                     </div>
                   </div>
                   <div className="min-w-0 space-y-1.5">
@@ -872,7 +889,7 @@ function CalendarView({
                       ))
                     ) : (
                       <p className="rounded-xl border border-dashed border-black/[0.06] px-3 py-2 text-sm text-slate-400 dark:border-white/[0.07] dark:text-slate-500">
-                        No entries
+                        {t("calendar.noEntries")}
                       </p>
                     )}
                   </div>
@@ -883,7 +900,7 @@ function CalendarView({
           <div className="hidden md:block">
             <div className="min-w-[48rem]">
               <div className="grid grid-cols-7 border-b border-black/[0.06] dark:border-white/[0.08]">
-                {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
+                {getWeekdayLabels(language).map((day) => (
                   <div
                     key={day}
                     className="px-3 py-2 text-xs font-semibold uppercase text-slate-400 dark:text-slate-500"
@@ -928,7 +945,7 @@ function CalendarView({
                         ))}
                         {dayEntries.length > 3 ? (
                           <div className="px-2 text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                            +{dayEntries.length - 3} more
+                            {t("calendar.more", { count: dayEntries.length - 3 })}
                           </div>
                         ) : null}
                       </div>
@@ -943,7 +960,7 @@ function CalendarView({
         <aside className="min-h-0 rounded-2xl border border-black/[0.08] bg-white/35 p-3 shadow-sm shadow-slate-950/[0.03] dark:border-white/[0.08] dark:bg-white/[0.035] dark:shadow-black/10">
           <div className="mb-3 flex items-center justify-between gap-2 px-1">
             <h2 className="text-sm font-semibold uppercase text-slate-400 dark:text-slate-500">
-              Upcoming
+              {t("calendar.upcoming")}
             </h2>
             <span className="notka-badge">{upcoming.length}</span>
           </div>
@@ -964,18 +981,18 @@ function CalendarView({
                       {entry.note.title}
                     </span>
                     <span className="shrink-0 text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">
-                      {entry.kind}
+                      {entry.kind === "Alert" ? t("calendar.kindAlert") : t("calendar.kindNote")}
                     </span>
                   </span>
                   <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
-                    {formatEntryDate(entry.date)}
+                    {formatEntryDate(entry.date, language)}
                   </span>
                 </button>
               ))}
             </div>
           ) : (
             <p className="rounded-xl border border-dashed border-black/[0.06] px-3 py-3 text-sm text-slate-400 dark:border-white/[0.07] dark:text-slate-500">
-              No calendar entries
+              {t("calendar.noCalendarEntries")}
             </p>
           )}
         </aside>
@@ -1000,6 +1017,9 @@ function CalendarEventButton({
   entry: CalendarEntry;
   onSelectNote: (note: NoteSummaryDto) => void;
 }) {
+  const { language, t } = useI18n();
+  const kindLabel = entry.kind === "Alert" ? t("calendar.kindAlert") : t("calendar.kindNote");
+
   return (
     <button
       className={cn(
@@ -1007,7 +1027,7 @@ function CalendarEventButton({
         calendarToneClass(entry.tone),
       )}
       type="button"
-      title={`${entry.kind}: ${entry.note.title}`}
+      title={t("calendar.eventTitle", { kind: kindLabel, title: entry.note.title })}
       onClick={() => onSelectNote(entry.note)}
     >
       {entry.kind === "Alert" ? (
@@ -1015,13 +1035,14 @@ function CalendarEventButton({
       ) : (
         <CalendarDays className="h-3 w-3 shrink-0" />
       )}
-      <span className="shrink-0 font-semibold">{formatEntryTime(entry.date)}</span>
+      <span className="shrink-0 font-semibold">{formatEntryTime(entry.date, language)}</span>
       <span className="min-w-0 truncate">{entry.note.title}</span>
     </button>
   );
 }
 
 function GroupAudience({ users }: { users: AppUserDto[] }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
 
   return (
@@ -1029,19 +1050,19 @@ function GroupAudience({ users }: { users: AppUserDto[] }) {
       <button
         className="muted-button h-10 px-3"
         type="button"
-        title="People who can see Group Notes"
-        aria-label="Show people who can see Group Notes"
+        title={t("group.peopleTitle")}
+        aria-label={t("group.peopleLabel")}
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
         <Users className="h-4 w-4" />
-        <span className="hidden sm:inline">Visible to</span>
+        <span className="hidden sm:inline">{t("group.visibleTo")}</span>
         <span className="notka-badge px-2 py-0.5 text-[11px]">{users.length}</span>
       </button>
       {open ? (
         <div className="settings-popover absolute right-0 top-[calc(100%+0.5rem)] z-30 w-[min(18rem,calc(100vw-2rem))] rounded-2xl p-2">
           <div className="px-2 pb-2 pt-1 text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
-            Group Notes Access
+            {t("group.access")}
           </div>
           <div className="max-h-64 overflow-y-auto">
             {users.map((user) => (
@@ -1069,8 +1090,9 @@ function FolderOverviewNote({
   note: NoteSummaryDto;
   onSelectNote: (noteId: string) => void;
 }) {
+  const { language, t } = useI18n();
   const alertTone = getAlertTone(note.alertAt);
-  const alertLabel = formatAlertDeadline(note.alertAt);
+  const alertLabel = formatAlertDeadline(note.alertAt, language);
 
   return (
     <button
@@ -1103,7 +1125,11 @@ function FolderOverviewNote({
                 alertTone === "neon" &&
                   "border-teal-400/25 bg-teal-500/15 text-teal-700 dark:text-teal-300",
               )}
-              title={alertLabel ? `Deadline ${alertLabel}` : "Deadline soon"}
+              title={
+                alertLabel
+                  ? t("editor.deadlineTitle", { date: alertLabel })
+                  : t("editor.deadline")
+              }
             >
               <AlertTriangle className="h-3.5 w-3.5" />
             </span>
@@ -1244,31 +1270,41 @@ function dateKey(value: Date) {
   return `${value.getFullYear()}-${month}-${day}`;
 }
 
-function formatMonth(value: Date) {
-  return new Intl.DateTimeFormat(undefined, {
+function formatMonth(value: Date, language: Language) {
+  return new Intl.DateTimeFormat(localeForLanguage(language), {
     month: "long",
     year: "numeric",
   }).format(value);
 }
 
-function formatEntryTime(value: Date) {
-  return new Intl.DateTimeFormat(undefined, {
+function formatEntryTime(value: Date, language: Language) {
+  return new Intl.DateTimeFormat(localeForLanguage(language), {
     hour: "2-digit",
     minute: "2-digit",
   }).format(value);
 }
 
-function formatEntryDate(value: Date) {
-  return new Intl.DateTimeFormat(undefined, {
+function formatEntryDate(value: Date, language: Language) {
+  return new Intl.DateTimeFormat(localeForLanguage(language), {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(value);
 }
 
-function formatWeekday(value: Date) {
-  return new Intl.DateTimeFormat(undefined, {
+function formatWeekday(value: Date, language: Language) {
+  return new Intl.DateTimeFormat(localeForLanguage(language), {
     weekday: "short",
   }).format(value);
+}
+
+function getWeekdayLabels(language: Language) {
+  const base = new Date(2024, 0, 1);
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(base);
+    day.setDate(base.getDate() + index);
+    return formatWeekday(day, language);
+  });
 }
 
 function calendarDotClass(tone: CalendarTone) {
@@ -1307,7 +1343,7 @@ function sortNotesByUpdated(a: NoteSummaryDto, b: NoteSummaryDto) {
   return b.updatedAt.localeCompare(a.updatedAt);
 }
 
-function buildFolderPath(folders: FolderDto[], folderId: string | null) {
+function buildFolderPath(folders: FolderDto[], folderId: string | null, language: Language) {
   if (!folderId) {
     return "/";
   }
@@ -1319,7 +1355,7 @@ function buildFolderPath(folders: FolderDto[], folderId: string | null) {
 
   while (current && !seen.has(current.id)) {
     seen.add(current.id);
-    segments.unshift(current.name);
+    segments.unshift(translateFolderName(language, current.name));
     current = current.parentFolderId ? byId.get(current.parentFolderId) : undefined;
   }
 

@@ -13,6 +13,7 @@ export async function POST(request: Request) {
       email: body.email,
       displayName: body.displayName,
       password: body.password,
+      language: body.language,
     });
 
     return NextResponse.json({ user });

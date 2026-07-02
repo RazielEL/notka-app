@@ -17,7 +17,7 @@ export default async function RegisterPage() {
   }
 
   return (
-    <AuthCard title="Create account" subtitle="Join this private Notka instance.">
+    <AuthCard titleKey="auth.registerTitle" subtitleKey="auth.registerSubtitle">
       <RegisterForm />
     </AuthCard>
   );

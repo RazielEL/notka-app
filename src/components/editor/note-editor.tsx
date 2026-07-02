@@ -30,9 +30,11 @@ import {
   useState,
 } from "react";
 
+import { useI18n } from "@/components/i18n-provider";
 import { MarkdownPreview } from "@/components/editor/markdown-preview";
 import { Button } from "@/components/ui/button";
 import { formatAlertDeadline, getAlertTone } from "@/lib/alerts";
+import { localeForLanguage, translateTemplateName, type Language } from "@/lib/i18n";
 import {
   buildChecklistMarkdown,
   buildTableMarkdown,
@@ -40,6 +42,7 @@ import {
   type ChecklistCategory,
   type ChecklistItem,
   type StructuredNote,
+  type StructuredMarkdownLabels,
   type TableData,
 } from "@/lib/markdown/structured";
 import type { NoteDetailDto, NoteScope, TemplateDto } from "@/lib/types";
@@ -71,6 +74,7 @@ export function NoteEditor({
   onCreateFromTemplate,
   onDirtyChange,
 }: NoteEditorProps) {
+  const { language, t } = useI18n();
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [status, setStatus] = useState<SaveStatus>("saved");
@@ -90,6 +94,15 @@ export function NoteEditor({
   const titleRef = useRef(title);
   const contentRef = useRef(content);
   const structuredNote = useMemo(() => parseStructuredNote(content), [content]);
+  const markdownLabels = useMemo<StructuredMarkdownLabels>(
+    () => ({
+      checklist: t("editor.checklist"),
+      table: t("editor.table"),
+      column: (number) => t("editor.column", { number }),
+      category: (number) => `${t("editor.category")} ${number}`,
+    }),
+    [t],
+  );
   const liveChecklist = useMemo(() => {
     if (structuredNote?.kind === "checklist") {
       const items = structuredNote.categories.flatMap((category) => category.items);
@@ -207,12 +220,12 @@ export function NoteEditor({
     setTitleDirty(true);
 
     if (structuredNote?.kind === "checklist") {
-      markContentDirty(buildChecklistMarkdown(nextTitle, structuredNote.categories));
+      markContentDirty(buildChecklistMarkdown(nextTitle, structuredNote.categories, markdownLabels));
       return;
     }
 
     if (structuredNote?.kind === "table") {
-      markContentDirty(buildTableMarkdown(nextTitle, structuredNote.table));
+      markContentDirty(buildTableMarkdown(nextTitle, structuredNote.table, markdownLabels));
       return;
     }
 
@@ -232,7 +245,7 @@ export function NoteEditor({
   }
 
   function changeChecklist(categories: ChecklistCategory[]) {
-    markContentDirty(buildChecklistMarkdown(titleRef.current, categories));
+    markContentDirty(buildChecklistMarkdown(titleRef.current, categories, markdownLabels));
   }
 
   function addChecklistCategory() {
@@ -241,18 +254,22 @@ export function NoteEditor({
     }
 
     markContentDirty(
-      buildChecklistMarkdown(titleRef.current, [
-        ...structuredNote.categories,
-        {
-          name: `Category ${structuredNote.categories.length + 1}`,
-          items: [{ checked: false, text: "" }],
-        },
-      ]),
+      buildChecklistMarkdown(
+        titleRef.current,
+        [
+          ...structuredNote.categories,
+          {
+            name: markdownLabels.category(structuredNote.categories.length + 1),
+            items: [{ checked: false, text: "" }],
+          },
+        ],
+        markdownLabels,
+      ),
     );
   }
 
   function changeTable(table: TableData) {
-    markContentDirty(buildTableMarkdown(titleRef.current, table));
+    markContentDirty(buildTableMarkdown(titleRef.current, table, markdownLabels));
   }
 
   function toggleCheckboxLine(lineIndex: number) {
@@ -374,7 +391,7 @@ export function NoteEditor({
   }
 
   async function deleteNote() {
-    if (!window.confirm("Move this note to trash?")) {
+    if (!window.confirm(t("editor.moveToTrashConfirm"))) {
       return;
     }
 
@@ -402,8 +419,11 @@ export function NoteEditor({
 
   const selectedTemplate = templates.find((template) => template.id === templateId) ?? templates[0];
   const alertTone = getAlertTone(note.alertAt);
-  const alertLabel = formatAlertDeadline(note.alertAt);
-  const calendarLabel = formatCalendarDate(note.calendarAt);
+  const alertLabel = formatAlertDeadline(note.alertAt, language);
+  const calendarLabel = formatCalendarDate(note.calendarAt, language);
+  const selectedTemplateName = selectedTemplate
+    ? translateTemplateName(language, selectedTemplate)
+    : t("editor.templateFallback");
   const showStructuredEditor = structuredNote !== null;
   const showEditor = !showStructuredEditor && (viewMode === "editor" || viewMode === "split");
   const showPreview = !showStructuredEditor && (viewMode === "preview" || viewMode === "split");
@@ -416,7 +436,7 @@ export function NoteEditor({
           value={title}
           onChange={changeTitle}
           onKeyDown={handleShortcut}
-          placeholder="Untitled note"
+          placeholder={t("editor.untitledNote")}
         />
         <div className="flex flex-wrap items-center gap-2">
           <span
@@ -430,13 +450,17 @@ export function NoteEditor({
                 "border-amber-500/10 bg-amber-500/10 text-amber-700 dark:text-amber-300",
             )}
           >
-            {status === "saved" ? "Saved" : status === "saving" ? "Saving..." : "Unsaved"}
+            {status === "saved"
+              ? t("editor.saved")
+              : status === "saving"
+                ? t("editor.saving")
+                : t("editor.unsaved")}
           </span>
           <Button
             type="button"
             variant="icon"
-            title="Save"
-            aria-label="Save note"
+            title={t("editor.save")}
+            aria-label={t("editor.saveNote")}
             onClick={() => void saveNote(true)}
           >
             <Save className="h-4 w-4" />
@@ -444,8 +468,8 @@ export function NoteEditor({
           <Button
             type="button"
             variant="icon"
-            title={note.pinned ? "Unpin" : "Pin"}
-            aria-label={note.pinned ? "Unpin note" : "Pin note"}
+            title={note.pinned ? t("editor.unpin") : t("editor.pin")}
+            aria-label={note.pinned ? t("editor.unpinNote") : t("editor.pinNote")}
             onClick={togglePin}
           >
             {note.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
@@ -453,8 +477,8 @@ export function NoteEditor({
           <Button
             type="button"
             variant="icon"
-            title="Delete"
-            aria-label="Delete note"
+            title={t("editor.delete")}
+            aria-label={t("editor.deleteNote")}
             onClick={deleteNote}
           >
             <Trash2 className="h-4 w-4" />
@@ -466,7 +490,7 @@ export function NoteEditor({
         <div className="flex h-10 w-full flex-none items-center gap-2 rounded-xl border border-black/[0.08] bg-white/45 px-3 text-sm text-slate-500 dark:border-white/[0.09] dark:bg-white/[0.055] dark:text-slate-300 sm:w-64 md:w-72">
           <FolderInput className="h-4 w-4 shrink-0" />
           <span className="shrink-0 text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
-            Folder
+            {t("editor.folder")}
           </span>
           <span className="min-w-0 truncate font-medium text-slate-700 dark:text-slate-100">
             {folderPath}
@@ -480,7 +504,7 @@ export function NoteEditor({
             ) : (
               <Table2 className="h-4 w-4" />
             )}
-            {structuredNote.kind === "checklist" ? "Checklist" : "Table"}
+            {structuredNote.kind === "checklist" ? t("editor.checklist") : t("editor.table")}
           </div>
         ) : (
           <ViewModeToggle value={viewMode} onChange={setViewMode} />
@@ -498,12 +522,14 @@ export function NoteEditor({
                 "border-rose-400/25 bg-rose-500/10 text-rose-700 dark:text-rose-200",
             )}
             type="button"
-            title={alertLabel ? `Deadline ${alertLabel}` : "Set alert"}
-            aria-label={alertLabel ? `Edit alert deadline ${alertLabel}` : "Set alert"}
+            title={alertLabel ? t("editor.deadlineTitle", { date: alertLabel }) : t("editor.setAlert")}
+            aria-label={
+              alertLabel ? t("editor.editAlertDeadline", { date: alertLabel }) : t("editor.setAlert")
+            }
             onClick={() => setAlertMenuOpen((open) => !open)}
           >
             <CalendarClock className="h-4 w-4" />
-            Set alert
+            {t("editor.setAlert")}
           </button>
           {alertMenuOpen ? (
             <div className="settings-popover fixed inset-x-3 top-32 z-30 max-h-[calc(100dvh-9rem)] overflow-y-auto rounded-2xl p-3 sm:absolute sm:inset-x-auto sm:left-0 sm:top-[calc(100%+0.5rem)] sm:w-[min(20rem,calc(100vw-2rem))]">
@@ -521,16 +547,18 @@ export function NoteEditor({
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    Deadline
+                    {t("editor.deadline")}
                   </p>
                   <p className="mt-0.5 text-xs leading-5 text-slate-400 dark:text-slate-500">
-                    {alertLabel ? `Set for ${alertLabel}` : "Show this note before the deadline."}
+                    {alertLabel
+                      ? t("editor.deadlineSetFor", { date: alertLabel })
+                      : t("editor.alertHelp")}
                   </p>
                 </div>
               </div>
               <label className="block">
                 <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
-                  Date and time
+                  {t("editor.dateAndTime")}
                 </span>
                 <input
                   className="notka-input h-10 py-0"
@@ -546,7 +574,7 @@ export function NoteEditor({
                   disabled={!alertInput || alertSaving}
                   onClick={() => void saveAlert()}
                 >
-                  {note.alertAt ? "Edit alert" : "Set alert"}
+                  {note.alertAt ? t("editor.editAlert") : t("editor.setAlert")}
                 </Button>
                 {note.alertAt ? (
                   <Button
@@ -554,7 +582,7 @@ export function NoteEditor({
                     disabled={alertSaving}
                     onClick={() => void deleteAlert()}
                   >
-                    Delete
+                    {t("editor.delete")}
                   </Button>
                 ) : null}
               </div>
@@ -570,12 +598,20 @@ export function NoteEditor({
                 "border-teal-500/20 bg-teal-500/10 text-teal-700 dark:text-teal-200",
             )}
             type="button"
-            title={calendarLabel ? `Calendar ${calendarLabel}` : "Add to calendar"}
-            aria-label={calendarLabel ? `Edit calendar date ${calendarLabel}` : "Add to calendar"}
+            title={
+              calendarLabel
+                ? t("editor.calendarTitle", { date: calendarLabel })
+                : t("editor.addToCalendar")
+            }
+            aria-label={
+              calendarLabel
+                ? t("editor.editCalendarDate", { date: calendarLabel })
+                : t("editor.addToCalendar")
+            }
             onClick={() => setCalendarMenuOpen((open) => !open)}
           >
             <CalendarPlus className="h-4 w-4" />
-            Add to calendar
+            {t("editor.addToCalendar")}
           </button>
           {calendarMenuOpen ? (
             <div className="settings-popover fixed inset-x-3 top-32 z-30 max-h-[calc(100dvh-9rem)] overflow-y-auto rounded-2xl p-3 sm:absolute sm:inset-x-auto sm:left-0 sm:top-[calc(100%+0.5rem)] sm:w-[min(20rem,calc(100vw-2rem))]">
@@ -585,16 +621,18 @@ export function NoteEditor({
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    Calendar
+                    {t("editor.calendar")}
                   </p>
                   <p className="mt-0.5 text-xs leading-5 text-slate-400 dark:text-slate-500">
-                    {calendarLabel ? `Added for ${calendarLabel}` : "Add this note to the calendar."}
+                    {calendarLabel
+                      ? t("editor.calendarAddedFor", { date: calendarLabel })
+                      : t("editor.calendarHelp")}
                   </p>
                 </div>
               </div>
               <label className="block">
                 <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
-                  Date and time
+                  {t("editor.dateAndTime")}
                 </span>
                 <input
                   className="notka-input h-10 py-0"
@@ -610,7 +648,7 @@ export function NoteEditor({
                   disabled={!calendarInput || calendarSaving}
                   onClick={() => void saveCalendarEntry()}
                 >
-                  {note.calendarAt ? "Edit calendar" : "Add to calendar"}
+                  {note.calendarAt ? t("editor.editCalendar") : t("editor.addToCalendar")}
                 </Button>
                 {note.calendarAt ? (
                   <Button
@@ -618,7 +656,7 @@ export function NoteEditor({
                     disabled={calendarSaving}
                     onClick={() => void deleteCalendarEntry()}
                   >
-                    Delete
+                    {t("editor.delete")}
                   </Button>
                 ) : null}
               </div>
@@ -635,7 +673,7 @@ export function NoteEditor({
               onClick={addChecklistCategory}
             >
               <Plus className="h-4 w-4" />
-              Add category
+              {t("editor.addCategory")}
             </Button>
           ) : null}
 
@@ -643,12 +681,12 @@ export function NoteEditor({
             <button
               className="muted-button h-10 px-3"
               type="button"
-              title="Templates"
-              aria-label="Open template actions"
+              title={t("editor.templates")}
+              aria-label={t("editor.openTemplateActions")}
               onClick={() => setTemplateMenuOpen((open) => !open)}
             >
               <FilePlus2 className="h-4 w-4" />
-              <span className="hidden sm:inline">Templates</span>
+              <span className="hidden sm:inline">{t("editor.templates")}</span>
               <ChevronDown
                 className={cn("h-4 w-4 shrink-0 transition", templateMenuOpen && "rotate-180")}
               />
@@ -656,7 +694,7 @@ export function NoteEditor({
             {templateMenuOpen ? (
               <div className="settings-popover fixed inset-x-3 top-32 z-20 max-h-[calc(100dvh-9rem)] overflow-y-auto rounded-2xl p-2 sm:absolute sm:inset-x-auto sm:right-0 sm:top-[calc(100%+0.5rem)] sm:w-[min(18rem,calc(100vw-2rem))]">
                 <div className="px-2 pb-2 pt-1 text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
-                  New from template
+                  {t("editor.newFromTemplate")}
                 </div>
                 <div className="max-h-56 overflow-y-auto">
                   {templates.map((template) => (
@@ -670,7 +708,7 @@ export function NoteEditor({
                       type="button"
                       onClick={() => setTemplateId(template.id)}
                     >
-                      <span className="min-w-0 truncate">{template.name}</span>
+                      <span className="min-w-0 truncate">{translateTemplateName(language, template)}</span>
                     </button>
                   ))}
                 </div>
@@ -684,7 +722,7 @@ export function NoteEditor({
                     }}
                   >
                     <FilePlus2 className="h-4 w-4" />
-                    New from {selectedTemplate?.name ?? "template"}
+                    {t("editor.newFromSelectedTemplate", { name: selectedTemplateName })}
                   </Button>
                   <Button
                     type="button"
@@ -695,7 +733,7 @@ export function NoteEditor({
                     }}
                   >
                     <WandSparkles className="h-4 w-4" />
-                    Save current as template
+                    {t("editor.saveCurrentAsTemplate")}
                   </Button>
                 </div>
               </div>
@@ -734,7 +772,7 @@ export function NoteEditor({
                 onChange={changeContent}
                 onKeyDown={handleShortcut}
                 spellCheck
-                placeholder="# Untitled note"
+                placeholder={`# ${t("editor.untitledNote")}`}
               />
             </div>
           ) : null}
@@ -747,7 +785,7 @@ export function NoteEditor({
             >
               <div className="mb-4 flex items-center justify-between gap-3">
                 <h2 className="text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
-                  Preview
+                  {t("editor.preview")}
                 </h2>
                 {liveChecklist.total > 0 ? (
                   <span className="notka-badge">
@@ -797,6 +835,8 @@ function ChecklistBuilder({
   onChange: (categories: ChecklistCategory[]) => void;
   onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
 }) {
+  const { t } = useI18n();
+
   function updateCategory(categoryIndex: number, patch: Partial<ChecklistCategory>) {
     onChange(
       categories.map((category, index) =>
@@ -829,7 +869,7 @@ function ChecklistBuilder({
       return;
     }
 
-    if (!window.confirm(`Delete "${category.name}" and its entries?`)) {
+    if (!window.confirm(t("editor.deleteCategoryConfirm", { name: category.name }))) {
       return;
     }
 
@@ -838,7 +878,7 @@ function ChecklistBuilder({
     onChange(
       nextCategories.length > 0
         ? nextCategories
-        : [{ name: "Checklist", items: [{ checked: false, text: "" }] }],
+        : [{ name: t("editor.checklist"), items: [{ checked: false, text: "" }] }],
     );
   }
 
@@ -884,8 +924,8 @@ function ChecklistBuilder({
                       updateCategory(categoryIndex, { name: event.target.value })
                     }
                     onKeyDown={onKeyDown}
-                    placeholder="Category"
-                    aria-label="Category name"
+                    placeholder={t("editor.category")}
+                    aria-label={t("editor.categoryName")}
                   />
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="notka-badge">
@@ -897,13 +937,13 @@ function ChecklistBuilder({
                       onClick={() => addEntry(categoryIndex)}
                     >
                       <Plus className="h-4 w-4" />
-                      Add entry
+                      {t("editor.addEntry")}
                     </Button>
                     <Button
                       type="button"
                       variant="icon"
-                      title="Delete category"
-                      aria-label={`Delete category ${category.name}`}
+                      title={t("editor.deleteCategory")}
+                      aria-label={t("editor.deleteCategoryLabel", { name: category.name })}
                       onClick={() => deleteCategory(categoryIndex)}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -930,8 +970,8 @@ function ChecklistBuilder({
                             ? "scale-100 border-teal-500 bg-teal-500 text-white shadow-sm shadow-teal-500/25"
                             : "border-slate-300 bg-white/60 text-transparent group-hover:scale-105 group-hover:border-teal-400 dark:border-slate-600 dark:bg-white/[0.06]",
                         )}
-                        title={item.checked ? "Mark as incomplete" : "Mark as complete"}
-                        aria-label={item.checked ? "Mark as incomplete" : "Mark as complete"}
+                        title={item.checked ? t("editor.markIncomplete") : t("editor.markComplete")}
+                        aria-label={item.checked ? t("editor.markIncomplete") : t("editor.markComplete")}
                         onClick={() =>
                           updateItem(categoryIndex, itemIndex, { checked: !item.checked })
                         }
@@ -948,14 +988,16 @@ function ChecklistBuilder({
                           updateItem(categoryIndex, itemIndex, { text: event.target.value })
                         }
                         onKeyDown={onKeyDown}
-                        placeholder="New entry"
+                        placeholder={t("editor.newEntry")}
                       />
                       <Button
                         type="button"
                         variant="icon"
                         className="h-8 w-8 shrink-0 opacity-70 transition group-hover:opacity-100"
-                        title="Delete entry"
-                        aria-label={`Delete entry ${item.text || itemIndex + 1}`}
+                        title={t("editor.deleteEntry")}
+                        aria-label={t("editor.deleteEntryLabel", {
+                          name: item.text || itemIndex + 1,
+                        })}
                         onClick={() => deleteEntry(categoryIndex, itemIndex)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -981,7 +1023,8 @@ function TableBuilder({
   onChange: (table: TableData) => void;
   onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
 }) {
-  const headers = table.headers.length > 0 ? table.headers : ["Column 1"];
+  const { t } = useI18n();
+  const headers = table.headers.length > 0 ? table.headers : [t("editor.column", { number: 1 })];
   const rows = table.rows.length > 0 ? table.rows : [headers.map(() => "")];
 
   function updateHeaders(nextHeaders: string[]) {
@@ -1007,7 +1050,7 @@ function TableBuilder({
   }
 
   function addColumn() {
-    const nextHeaders = [...headers, `Column ${headers.length + 1}`];
+    const nextHeaders = [...headers, t("editor.column", { number: headers.length + 1 })];
     onChange({
       headers: nextHeaders,
       rows: rows.map((row) => [...normalizeCells(row, headers.length), ""]),
@@ -1027,17 +1070,17 @@ function TableBuilder({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
-              Table
+              {t("editor.table")}
             </h2>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" onClick={addColumn}>
               <Plus className="h-4 w-4" />
-              Add column
+              {t("editor.addColumn")}
             </Button>
             <Button type="button" variant="primary" onClick={addRow}>
               <Plus className="h-4 w-4" />
-              Add row
+              {t("editor.addRow")}
             </Button>
           </div>
         </div>
@@ -1060,7 +1103,7 @@ function TableBuilder({
                         updateHeaders(nextHeaders);
                       }}
                       onKeyDown={onKeyDown}
-                      placeholder={`Column ${columnIndex + 1}`}
+                      placeholder={t("editor.column", { number: columnIndex + 1 })}
                     />
                   </th>
                 ))}
@@ -1079,7 +1122,7 @@ function TableBuilder({
                         value={row[columnIndex] ?? ""}
                         onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)}
                         onKeyDown={onKeyDown}
-                        placeholder="Empty"
+                        placeholder={t("editor.empty")}
                       />
                     </td>
                   ))}
@@ -1091,7 +1134,7 @@ function TableBuilder({
 
         <Button type="button" className="self-start" onClick={addRow}>
           <Plus className="h-4 w-4" />
-          Add row
+          {t("editor.addRow")}
         </Button>
       </div>
     </div>
@@ -1109,14 +1152,15 @@ function ViewModeToggle({
   value: ViewMode;
   onChange: (value: ViewMode) => void;
 }) {
+  const { t } = useI18n();
   const options: Array<{ value: ViewMode; label: string; icon: ReactNode }> = [
-    { value: "editor", label: "Markdown", icon: <Code2 className="h-3.5 w-3.5" /> },
-    { value: "preview", label: "Preview", icon: <Eye className="h-3.5 w-3.5" /> },
-    { value: "split", label: "Split", icon: <Columns2 className="h-3.5 w-3.5" /> },
+    { value: "editor", label: t("editor.markdown"), icon: <Code2 className="h-3.5 w-3.5" /> },
+    { value: "preview", label: t("editor.preview"), icon: <Eye className="h-3.5 w-3.5" /> },
+    { value: "split", label: t("editor.split"), icon: <Columns2 className="h-3.5 w-3.5" /> },
   ];
 
   return (
-    <div className="segmented-control" role="group" aria-label="Note view mode">
+    <div className="segmented-control" role="group" aria-label={t("editor.viewMode")}>
       {options.map((option) => (
         <button
           key={option.value}
@@ -1160,7 +1204,7 @@ function toDatetimeLocalValue(value: string | null | undefined) {
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }
 
-function formatCalendarDate(value: string | null | undefined) {
+function formatCalendarDate(value: string | null | undefined, language: Language) {
   if (!value) {
     return null;
   }
@@ -1171,7 +1215,7 @@ function formatCalendarDate(value: string | null | undefined) {
     return null;
   }
 
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(localeForLanguage(language), {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
