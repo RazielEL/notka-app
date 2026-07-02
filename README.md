@@ -39,6 +39,7 @@ openssl rand -base64 48
 Start the app from the source checkout:
 
 ```bash
+mkdir -p data
 docker compose up -d --build
 ```
 
@@ -70,6 +71,7 @@ services:
 Or use the included GHCR compose file:
 
 ```bash
+mkdir -p data
 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
@@ -78,6 +80,7 @@ docker compose -f docker-compose.ghcr.yml up -d
 The default `docker-compose.yml` builds the image from this repository:
 
 ```bash
+mkdir -p data
 docker compose up -d --build
 ```
 
@@ -130,6 +133,12 @@ docker compose up -d
 ```
 
 Keep backups outside the app directory if the notes matter.
+
+If the container reports permission errors for the mounted data directory, make sure the directory is writable by UID `1000`:
+
+```bash
+sudo chown -R 1000:1000 ./data
+```
 
 ## Updating
 

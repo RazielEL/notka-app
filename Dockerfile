@@ -21,13 +21,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV DATA_DIR=/data
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN groupadd --system --gid 1001 nodejs \
-  && useradd --system --uid 1001 --gid nodejs notka \
-  && mkdir -p /data \
-  && chown -R notka:nodejs /data /app
-COPY --from=builder --chown=notka:nodejs /app/public ./public
-COPY --from=builder --chown=notka:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=notka:nodejs /app/.next/static ./.next/static
-USER notka
+RUN mkdir -p /data \
+  && chown -R node:node /data /app
+COPY --from=builder --chown=node:node /app/public ./public
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+USER node
 EXPOSE 3000
 CMD ["node", "server.js"]
