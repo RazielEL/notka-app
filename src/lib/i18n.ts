@@ -55,6 +55,7 @@ const en = {
 
   "sidebar.hide": "Hide sidebar",
   "sidebar.show": "Show sidebar",
+  "sidebar.menu": "Menu",
   "sidebar.close": "Close sidebar",
   "sidebar.search": "Search notes",
   "sidebar.pinnedNotes": "Pinned Notes",
@@ -229,6 +230,7 @@ const pl: Record<TranslationKey, string> = {
 
   "sidebar.hide": "Ukryj panel boczny",
   "sidebar.show": "Pokaż panel boczny",
+  "sidebar.menu": "Menu",
   "sidebar.close": "Zamknij panel boczny",
   "sidebar.search": "Szukaj notatek",
   "sidebar.pinnedNotes": "Przypięte notatki",

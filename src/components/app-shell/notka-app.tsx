@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/components/i18n-provider";
@@ -39,6 +40,29 @@ import type {
 import { cn } from "@/lib/utils";
 
 type AppArea = "personal" | "group" | "calendar";
+
+type SidebarSwipeGesture = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  sidebarOpenAtStart: boolean;
+  sidebarSide: UserPreferences["sidebarSide"];
+};
+
+const MOBILE_SIDEBAR_SWIPE_EDGE_PX = 72;
+const MOBILE_SIDEBAR_SWIPE_DISTANCE_PX = 56;
+const MOBILE_SIDEBAR_SWIPE_RATIO = 1.25;
+const appSafeAreaStyle: CSSProperties = {
+  paddingTop: "max(2.5rem, calc(env(safe-area-inset-top) + 2.5rem))",
+  paddingBottom: "max(0.75rem, calc(env(safe-area-inset-bottom) + 0.75rem))",
+};
+const mobileSidebarPanelStyle: CSSProperties = {
+  top: "max(2.5rem, calc(env(safe-area-inset-top) + 2.5rem))",
+  bottom: "max(0.75rem, calc(env(safe-area-inset-bottom) + 0.75rem))",
+};
+const floatingMenuButtonStyle: CSSProperties = {
+  bottom: "max(1rem, calc(env(safe-area-inset-bottom) + 1rem))",
+};
 
 type NotkaAppProps = {
   user: AuthUser;
@@ -76,6 +100,7 @@ export function NotkaApp({
   const [editorHasUnsavedChanges, setEditorHasUnsavedChanges] = useState(false);
   const listRequestIdRef = useRef(0);
   const noteRequestIdRef = useRef(0);
+  const sidebarSwipeRef = useRef<SidebarSwipeGesture | null>(null);
   const currentScope: NoteScope = activeArea === "group" ? "group" : "personal";
 
   const refreshFoldersAndNotes = useCallback(async (scope: NoteScope = currentScope) => {
@@ -560,6 +585,78 @@ export function NotkaApp({
     }
   }
 
+  function handleAppPointerDown(event: ReactPointerEvent<HTMLElement>) {
+    if (event.pointerType !== "touch" || !isMobileViewport() || isEditableSwipeTarget(event.target)) {
+      sidebarSwipeRef.current = null;
+      return;
+    }
+
+    const startX = event.clientX;
+    const viewportWidth = window.innerWidth;
+    const startsNearOpeningEdge =
+      preferences.sidebarSide === "right"
+        ? viewportWidth - startX <= MOBILE_SIDEBAR_SWIPE_EDGE_PX
+        : startX <= MOBILE_SIDEBAR_SWIPE_EDGE_PX;
+
+    if (!sidebarOpen && !startsNearOpeningEdge) {
+      sidebarSwipeRef.current = null;
+      return;
+    }
+
+    sidebarSwipeRef.current = {
+      pointerId: event.pointerId,
+      startX,
+      startY: event.clientY,
+      sidebarOpenAtStart: sidebarOpen,
+      sidebarSide: preferences.sidebarSide,
+    };
+
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {}
+  }
+
+  function handleAppPointerMove(event: ReactPointerEvent<HTMLElement>) {
+    const gesture = sidebarSwipeRef.current;
+
+    if (!gesture || gesture.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const dx = event.clientX - gesture.startX;
+    const dy = event.clientY - gesture.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+
+    if (absY > 24 && absY > absX) {
+      sidebarSwipeRef.current = null;
+      return;
+    }
+
+    if (absX < MOBILE_SIDEBAR_SWIPE_DISTANCE_PX || absX < absY * MOBILE_SIDEBAR_SWIPE_RATIO) {
+      return;
+    }
+
+    const swipedTowardOpenSide =
+      gesture.sidebarSide === "right" ? dx < 0 : dx > 0;
+    const shouldOpen = !gesture.sidebarOpenAtStart && swipedTowardOpenSide;
+    const shouldClose = gesture.sidebarOpenAtStart && !swipedTowardOpenSide;
+
+    if (shouldOpen) {
+      setSidebarOpen(true);
+    } else if (shouldClose) {
+      setSidebarOpen(false);
+    }
+
+    sidebarSwipeRef.current = null;
+  }
+
+  function endAppPointerGesture(event: ReactPointerEvent<HTMLElement>) {
+    if (sidebarSwipeRef.current?.pointerId === event.pointerId) {
+      sidebarSwipeRef.current = null;
+    }
+  }
+
   const selectedFolder = folders.find((folder) => folder.id === selectedFolderId);
   const selectedFolderPath =
     selectedFolderId === null
@@ -575,9 +672,10 @@ export function NotkaApp({
       />
       <div
         className={cn(
-          "fixed inset-y-2 z-40 w-[min(21rem,calc(100vw-1rem))] md:static md:z-auto md:w-80 md:flex-none",
+          "fixed z-40 w-[min(21rem,calc(100vw-1rem))] md:static md:z-auto md:w-80 md:flex-none",
           preferences.sidebarSide === "right" ? "right-3" : "left-3",
         )}
+        style={mobileSidebarPanelStyle}
       >
         <Sidebar
           user={user}
@@ -653,25 +751,39 @@ export function NotkaApp({
   );
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-[1600px] flex-col gap-2 overflow-x-hidden p-2 sm:gap-3 sm:p-3 md:flex-row">
+    <main
+      className="mx-auto flex min-h-dvh w-full max-w-[1600px] touch-pan-y flex-col gap-2 overflow-x-hidden p-2 sm:gap-3 sm:p-3 md:flex-row"
+      style={appSafeAreaStyle}
+      onPointerDown={handleAppPointerDown}
+      onPointerMove={handleAppPointerMove}
+      onPointerUp={endAppPointerGesture}
+      onPointerCancel={endAppPointerGesture}
+    >
       {!sidebarOpen ? (
         <button
-          className={cn(
-            "icon-button fixed top-4 z-50 border-black/[0.08] bg-white/80 shadow-sm backdrop-blur-xl dark:border-white/[0.09] dark:bg-navy-900/80",
-            preferences.sidebarSide === "right" ? "right-4" : "left-4",
-          )}
+          className="fixed right-4 z-50 inline-flex h-12 items-center gap-2 rounded-2xl border border-black/[0.08] bg-white/85 px-3.5 pr-4 text-sm font-semibold text-slate-700 shadow-sm backdrop-blur-xl transition hover:-translate-y-px hover:bg-white focus:outline-none focus:ring-4 focus:ring-teal-500/15 active:translate-y-0 dark:border-white/[0.09] dark:bg-navy-900/85 dark:text-slate-100 dark:hover:bg-navy-850"
+          style={floatingMenuButtonStyle}
           type="button"
           title={t("sidebar.show")}
           aria-label={t("sidebar.show")}
           onClick={() => setSidebarOpen(true)}
         >
-          <PanelLeftOpen className="h-4 w-4" />
+          <PanelLeftOpen className="h-5 w-5" />
+          <span>{t("sidebar.menu")}</span>
         </button>
       ) : null}
       {preferences.sidebarSide === "right" ? contentPanel : sidebarPanel}
       {preferences.sidebarSide === "right" ? sidebarPanel : contentPanel}
     </main>
   );
+}
+
+function isMobileViewport() {
+  return typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
+}
+
+function isEditableSwipeTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
 }
 
 function toSummary(note: NoteDetailDto | NoteSummaryDto): NoteSummaryDto {

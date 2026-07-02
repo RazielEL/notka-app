@@ -530,7 +530,7 @@ function FolderTreeItem({
     <div>
       <div
         className={cn(
-          "group flex items-center gap-1 rounded-xl",
+          "group mb-1 flex items-center gap-1 rounded-xl",
           isDragOver && "bg-teal-500/10 ring-2 ring-teal-500/15",
         )}
         onDragOver={(event) => {
@@ -565,7 +565,7 @@ function FolderTreeItem({
           />
         </button>
         <button
-          className={cn("sidebar-item min-w-0 flex-1", isActive && "sidebar-item-active")}
+          className={cn("sidebar-item min-w-0 flex-1 py-2", isActive && "sidebar-item-active")}
           type="button"
           draggable
           onDragStart={(event) => onBeginFolderDrag(event, folder.id)}
@@ -767,7 +767,7 @@ function TreeNoteItem({
   return (
     <button
       className={cn(
-        "sidebar-item min-w-0 border border-transparent py-2 text-xs",
+        "sidebar-item min-w-0 border border-transparent py-1.5 text-xs",
         noteAlertClass(alertTone),
         active && "sidebar-item-active",
       )}
