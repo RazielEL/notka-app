@@ -413,6 +413,7 @@ export function Sidebar({
                     key={note.id}
                     note={note}
                     active={selectedNoteId === note.id}
+                    compact
                     onDragStart={(event) => {
                       event.dataTransfer.setData("application/x-notka-note-id", note.id);
                       event.dataTransfer.effectAllowed = "move";
@@ -836,11 +837,13 @@ function TreeNoteItem({
 function NoteListItem({
   note,
   active,
+  compact = false,
   onDragStart,
   onClick,
 }: {
   note: NoteSummaryDto;
   active: boolean;
+  compact?: boolean;
   onDragStart?: (event: DragEvent<HTMLButtonElement>) => void;
   onClick: () => void;
 }) {
@@ -851,40 +854,47 @@ function NoteListItem({
   return (
     <button
       className={cn(
-        "sidebar-item mb-1.5 flex-col items-start gap-1.5 border border-transparent",
+        "sidebar-item mb-1.5 border border-transparent",
+        compact ? "py-2" : "flex-col items-start gap-1.5",
         noteAlertClass(alertTone),
         active && "sidebar-item-active",
       )}
-      title={alertLabel ? t("editor.deadlineTitle", { date: alertLabel }) : undefined}
+      title={compact ? note.title : alertLabel ? t("editor.deadlineTitle", { date: alertLabel }) : undefined}
       type="button"
       draggable={Boolean(onDragStart)}
       onDragStart={onDragStart}
       onClick={onClick}
     >
-      <span className="flex w-full items-center gap-2">
-        {note.pinned ? <Pin className="h-3.5 w-3.5 shrink-0 text-amber-500" /> : null}
-        <span className="truncate font-medium">{note.title}</span>
-        {alertTone !== "none" ? (
-          <AlertTriangle
-            className={cn(
-              "h-3.5 w-3.5 shrink-0",
-              alertTone === "red" && "text-rose-500 dark:text-rose-300",
-              alertTone === "yellow" && "text-amber-600 dark:text-amber-300",
-              alertTone === "neon" && "text-teal-600 dark:text-teal-300",
-            )}
-          />
-        ) : null}
-        {note.checklistTotal > 0 ? (
-          <span className="ml-auto rounded-full border border-teal-500/10 bg-teal-500/10 px-2 py-0.5 text-xs font-semibold text-teal-700 dark:text-teal-300">
-            {note.checklistCompleted}/{note.checklistTotal}
+      {compact ? (
+        <span className="min-w-0 flex-1 truncate font-medium">{note.title}</span>
+      ) : (
+        <>
+          <span className="flex w-full items-center gap-2">
+            {note.pinned ? <Pin className="h-3.5 w-3.5 shrink-0 text-amber-500" /> : null}
+            <span className="truncate font-medium">{note.title}</span>
+            {alertTone !== "none" ? (
+              <AlertTriangle
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0",
+                  alertTone === "red" && "text-rose-500 dark:text-rose-300",
+                  alertTone === "yellow" && "text-amber-600 dark:text-amber-300",
+                  alertTone === "neon" && "text-teal-600 dark:text-teal-300",
+                )}
+              />
+            ) : null}
+            {note.checklistTotal > 0 ? (
+              <span className="ml-auto rounded-full border border-teal-500/10 bg-teal-500/10 px-2 py-0.5 text-xs font-semibold text-teal-700 dark:text-teal-300">
+                {note.checklistCompleted}/{note.checklistTotal}
+              </span>
+            ) : null}
           </span>
-        ) : null}
-      </span>
-      {note.excerpt ? (
-        <span className="line-clamp-2 text-xs leading-5 text-slate-400 dark:text-slate-500">
-          {note.excerpt}
-        </span>
-      ) : null}
+          {note.excerpt ? (
+            <span className="line-clamp-2 text-xs leading-5 text-slate-400 dark:text-slate-500">
+              {note.excerpt}
+            </span>
+          ) : null}
+        </>
+      )}
     </button>
   );
 }
