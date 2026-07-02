@@ -7,7 +7,7 @@ import { getDb } from "@/db";
 import { folders, notes } from "@/db/schema";
 import { normalizeLanguage } from "@/lib/i18n";
 import { extractMarkdownMetadata, titleFromContent } from "@/lib/markdown/metadata";
-import { ensureInboxFolder, getFolderForUser } from "@/lib/server/folders";
+import { getFolderForUser } from "@/lib/server/folders";
 import { getTemplateBody } from "@/lib/server/templates";
 import {
   groupNoteRelativePath,
@@ -127,7 +127,7 @@ export async function createNote(ownerUserId: string, input: {
     id,
     ownerUserId,
     scope,
-    folderId: folder.id,
+    folderId: folder?.id ?? null,
     createdByUserId: ownerUserId,
     updatedByUserId: ownerUserId,
     title,
@@ -407,7 +407,7 @@ async function ensureDefaultFolder(ownerUserId: string, scope: NoteScope) {
     return ensureGroupInboxFolder(ownerUserId);
   }
 
-  return ensureInboxFolder(ownerUserId);
+  return null;
 }
 
 async function withNoteMutationLock<T>(noteId: string, operation: () => Promise<T>) {

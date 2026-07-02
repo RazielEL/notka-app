@@ -226,6 +226,42 @@ function runMigrations(database: Database.Database) {
       .prepare("INSERT INTO __drizzle_migrations (id, applied_at) VALUES (?, ?)")
       .run(noteCalendarMigrationId, new Date().toISOString());
   }
+
+  const personalRootMigrationId = "0005_personal_all_notes_root";
+  const personalRootApplied = database
+    .prepare("SELECT id FROM __drizzle_migrations WHERE id = ?")
+    .get(personalRootMigrationId);
+
+  if (!personalRootApplied) {
+    database.exec(`
+      UPDATE notes
+      SET folder_id = NULL
+      WHERE folder_id IN (
+        SELECT id FROM folders
+        WHERE scope = 'personal'
+          AND name = 'Inbox'
+          AND parent_folder_id IS NULL
+      );
+
+      UPDATE folders
+      SET parent_folder_id = NULL
+      WHERE parent_folder_id IN (
+        SELECT id FROM folders
+        WHERE scope = 'personal'
+          AND name = 'Inbox'
+          AND parent_folder_id IS NULL
+      );
+
+      DELETE FROM folders
+      WHERE scope = 'personal'
+        AND name = 'Inbox'
+        AND parent_folder_id IS NULL;
+    `);
+
+    database
+      .prepare("INSERT INTO __drizzle_migrations (id, applied_at) VALUES (?, ?)")
+      .run(personalRootMigrationId, new Date().toISOString());
+  }
 }
 
 export function getSqlite() {

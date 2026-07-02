@@ -47,11 +47,13 @@ export async function DELETE(request: Request, { params }: RouteContext) {
     }
 
     const url = new URL(request.url);
-    const moveToInbox = url.searchParams.get("moveToInbox") !== "false";
+    const moveToRoot =
+      url.searchParams.get("moveToRoot") !== "false" &&
+      url.searchParams.get("moveToInbox") !== "false";
     const result = await deleteFolder(
       user.id,
       params.folderId,
-      moveToInbox,
+      moveToRoot,
       url.searchParams.get("scope") ?? "personal",
     );
 

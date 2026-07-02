@@ -73,7 +73,7 @@ const en = {
   "sidebar.hideFolderContents": "Hide folder contents",
   "sidebar.showContentsOf": "Show contents of {name}",
   "sidebar.hideContentsOf": "Hide contents of {name}",
-  "sidebar.deleteFolderConfirm": "Delete this folder and nested folders? Notes inside them will move to Inbox.",
+  "sidebar.deleteFolderConfirm": "Delete this folder and nested folders? Notes inside them will move to All notes.",
 
   "overview.newNote": "New note",
   "overview.noGroupNotes": "No group notes yet",
@@ -248,7 +248,7 @@ const pl: Record<TranslationKey, string> = {
   "sidebar.hideFolderContents": "Ukryj zawartość folderu",
   "sidebar.showContentsOf": "Pokaż zawartość {name}",
   "sidebar.hideContentsOf": "Ukryj zawartość {name}",
-  "sidebar.deleteFolderConfirm": "Usunąć ten folder i podfoldery? Notatki w środku zostaną przeniesione do Inbox.",
+  "sidebar.deleteFolderConfirm": "Usunąć ten folder i podfoldery? Notatki w środku zostaną przeniesione do Wszystkich notatek.",
 
   "overview.newNote": "Nowa notatka",
   "overview.noGroupNotes": "Nie ma jeszcze notatek grupowych",
@@ -470,9 +470,7 @@ export function getBuiltInTemplateBody(templateId: string, language: Language) {
   if (templateId === "daily") {
     const today = new Date().toLocaleDateString("en-CA");
 
-    return language === "pl"
-      ? `# ${today}\n\n## Notatki\n\n\n## Lista zadań\n\n- [ ] \n`
-      : `# ${today}\n\n## Notes\n\n\n## Checklist\n\n- [ ] \n`;
+    return `# ${today}\n\n## Notes\n\n- \n\n## Checklist\n\n- [ ] \n- [ ] \n- [ ] \n\n## Work\n\n- \n\n## Important\n\n- \n\n## Tomorrow\n\n- [ ] \n`;
   }
 
   return language === "pl" ? "# Notatka bez tytułu\n\n" : "# Untitled note\n\n";

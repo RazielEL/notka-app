@@ -11,6 +11,7 @@ import {
   Pencil,
   PanelLeftClose,
   Pin,
+  Plus,
   Search,
   Settings,
   Trash2,
@@ -23,6 +24,8 @@ import { translateFolderName } from "@/lib/i18n";
 import { colorThemes, fontChoices, type UserPreferences } from "@/lib/preferences";
 import type { AuthUser, FolderDto, NoteSummaryDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+const ROOT_FOLDER_ID = "__notka_root__";
 
 type AppArea = "personal" | "group" | "calendar";
 
@@ -41,11 +44,12 @@ type SidebarProps = {
   onSelectFolder: (folderId: string) => void;
   onSelectAllNotes: () => void;
   onSelectNote: (noteId: string) => void;
+  onCreateNoteInFolder: (folderId: string) => void;
   onCreateFolder: (name: string, parentFolderId?: string | null) => Promise<void>;
   onRenameFolder: (folderId: string, name: string) => Promise<void>;
   onDeleteFolder: (folderId: string) => Promise<void>;
   onMoveFolder: (folderId: string, parentFolderId: string | null) => Promise<void>;
-  onMoveNoteToFolder: (noteId: string, folderId: string) => Promise<void>;
+  onMoveNoteToFolder: (noteId: string, folderId: string | null) => Promise<void>;
   onCloseSidebar: () => void;
   preferences: UserPreferences;
   onPreferencesChange: (preferences: Partial<UserPreferences>) => void;
@@ -67,6 +71,7 @@ export function Sidebar({
   onSelectFolder,
   onSelectAllNotes,
   onSelectNote,
+  onCreateNoteInFolder,
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
@@ -84,8 +89,9 @@ export function Sidebar({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
-  const folderTree = useMemo(() => buildFolderTree(folders), [folders]);
+  const folderTree = useMemo(() => buildFolderTree(folders, 1), [folders]);
   const notesByFolder = useMemo(() => groupNotesByFolder(notes), [notes]);
+  const rootNotes = notesByFolder.get(ROOT_FOLDER_ID) ?? [];
 
   async function submitFolder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -140,7 +146,13 @@ export function Sidebar({
     event.preventDefault();
     setDragOverFolderId(null);
 
+    const noteId = event.dataTransfer.getData("application/x-notka-note-id");
     const folderId = event.dataTransfer.getData("application/x-notka-folder-id");
+
+    if (noteId) {
+      await onMoveNoteToFolder(noteId, null);
+      return;
+    }
 
     if (folderId) {
       await onMoveFolder(folderId, null);
@@ -466,12 +478,22 @@ export function Sidebar({
                     collapsedFolderIds={collapsedFolderIds}
                     onSelectFolder={onSelectFolder}
                     onSelectNote={onSelectNote}
+                    onCreateNoteInFolder={onCreateNoteInFolder}
                     onToggleFolder={toggleFolder}
                     onRenameFolder={renameFolder}
                     onDeleteFolder={deleteFolder}
                     onBeginFolderDrag={beginFolderDrag}
                     onDragOverFolder={setDragOverFolderId}
                     onDropOnFolder={dropOnFolder}
+                  />
+                ))}
+                {rootNotes.map((note) => (
+                  <TreeNoteItem
+                    key={note.id}
+                    note={note}
+                    active={selectedNoteId === note.id}
+                    depth={1}
+                    onClick={() => onSelectNote(note.id)}
                   />
                 ))}
               </div>
@@ -497,6 +519,7 @@ function FolderTreeItem({
   collapsedFolderIds,
   onSelectFolder,
   onSelectNote,
+  onCreateNoteInFolder,
   onToggleFolder,
   onRenameFolder,
   onDeleteFolder,
@@ -512,6 +535,7 @@ function FolderTreeItem({
   collapsedFolderIds: Set<string>;
   onSelectFolder: (folderId: string) => void;
   onSelectNote: (noteId: string) => void;
+  onCreateNoteInFolder: (folderId: string) => void;
   onToggleFolder: (folderId: string) => void;
   onRenameFolder: (folderId: string, currentName: string) => Promise<void>;
   onDeleteFolder: (folderId: string) => Promise<void>;
@@ -577,6 +601,15 @@ function FolderTreeItem({
         <button
           className="icon-button h-8 w-8 opacity-80 md:opacity-0 md:group-hover:opacity-80"
           type="button"
+          title={t("overview.newNote")}
+          aria-label={t("overview.newNote")}
+          onClick={() => onCreateNoteInFolder(folder.id)}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+        <button
+          className="icon-button h-8 w-8 opacity-80 md:opacity-0 md:group-hover:opacity-80"
+          type="button"
           title={t("sidebar.renameFolder")}
           aria-label={t("sidebar.renameFolderLabel", {
             name: translateFolderName(language, folder.name),
@@ -610,6 +643,7 @@ function FolderTreeItem({
               collapsedFolderIds={collapsedFolderIds}
               onSelectFolder={onSelectFolder}
               onSelectNote={onSelectNote}
+              onCreateNoteInFolder={onCreateNoteInFolder}
               onToggleFolder={onToggleFolder}
               onRenameFolder={onRenameFolder}
               onDeleteFolder={onDeleteFolder}
@@ -633,7 +667,7 @@ function FolderTreeItem({
   );
 }
 
-function buildFolderTree(folders: FolderDto[]) {
+function buildFolderTree(folders: FolderDto[], rootDepth = 0) {
   const nodes = new Map<string, FolderNode>();
   const roots: FolderNode[] = [];
 
@@ -661,20 +695,17 @@ function buildFolderTree(folders: FolderDto[]) {
         children: sortNodes(item.children, depth + 1),
       }));
 
-  return sortNodes(roots, 0);
+  return sortNodes(roots, rootDepth);
 }
 
 function groupNotesByFolder(notes: NoteSummaryDto[]) {
   const grouped = new Map<string, NoteSummaryDto[]>();
 
   for (const note of notes) {
-    if (!note.folderId) {
-      continue;
-    }
-
-    const current = grouped.get(note.folderId) ?? [];
+    const folderId = note.folderId ?? ROOT_FOLDER_ID;
+    const current = grouped.get(folderId) ?? [];
     current.push(note);
-    grouped.set(note.folderId, current);
+    grouped.set(folderId, current);
   }
 
   for (const [folderId, folderNotes] of grouped) {

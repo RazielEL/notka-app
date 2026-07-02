@@ -69,7 +69,7 @@ type NotkaAppProps = {
   initialFolders: FolderDto[];
   initialNotes: NoteSummaryDto[];
   initialTemplates: TemplateDto[];
-  defaultFolderId: string;
+  defaultFolderId: string | null;
 };
 
 export function NotkaApp({
@@ -357,12 +357,12 @@ export function NotkaApp({
     await selectNoteByScope(note.id, note.scope);
   }
 
-  async function createNote(templateId?: string) {
+  async function createNote(templateId?: string, targetFolderId: string | null = selectedFolderId) {
     const response = await fetch("/api/notes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        folderId: selectedFolderId ?? undefined,
+        folderId: targetFolderId,
         templateId,
         scope: currentScope,
         language,
@@ -384,7 +384,10 @@ export function NotkaApp({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name,
-        parentFolderId: parentFolderId ?? selectedFolderId,
+        parentFolderId:
+          parentFolderId !== undefined
+            ? parentFolderId
+            : selectedFolderId,
         scope: currentScope,
       }),
     });
@@ -429,7 +432,7 @@ export function NotkaApp({
     }
   }
 
-  async function moveNoteToFolder(noteId: string, folderId: string) {
+  async function moveNoteToFolder(noteId: string, folderId: string | null) {
     const response = await fetch(`/api/notes/${noteId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -448,7 +451,7 @@ export function NotkaApp({
   }
 
   async function deleteFolder(folderId: string) {
-    const response = await fetch(`/api/folders/${folderId}?moveToInbox=true&scope=${currentScope}`, {
+    const response = await fetch(`/api/folders/${folderId}?moveToRoot=true&scope=${currentScope}`, {
       method: "DELETE",
     });
 
@@ -692,6 +695,7 @@ export function NotkaApp({
           onSelectFolder={selectFolder}
           onSelectAllNotes={selectAllNotes}
           onSelectNote={selectNote}
+          onCreateNoteInFolder={(folderId) => void createNote(undefined, folderId)}
           onCreateFolder={createFolder}
           onRenameFolder={renameFolder}
           onDeleteFolder={deleteFolder}
@@ -1478,11 +1482,11 @@ function folderStorageKey(scope: NoteScope) {
   return scope === "group" ? "notka-folder-id-group" : "notka-folder-id-personal";
 }
 
-function getDefaultFolderId(folders: FolderDto[], scope: NoteScope, fallbackPersonalFolderId: string) {
+function getDefaultFolderId(folders: FolderDto[], scope: NoteScope, fallbackPersonalFolderId: string | null) {
   if (scope === "personal") {
-    return folders.some((folder) => folder.id === fallbackPersonalFolderId)
+    return fallbackPersonalFolderId && folders.some((folder) => folder.id === fallbackPersonalFolderId)
       ? fallbackPersonalFolderId
-      : folders[0]?.id ?? null;
+      : null;
   }
 
   return folders.find((folder) => folder.name === "Group Inbox" && !folder.parentFolderId)?.id

@@ -140,7 +140,7 @@ export async function updateFolder(
   }
 
   if (input.parentFolderId !== undefined) {
-    if (isDefaultFolder(folder)) {
+    if (isGroupDefaultFolder(folder)) {
       updates.parentFolderId = null;
     } else {
       const parentFolderId = await resolveParentFolderId(ownerUserId, scope, input.parentFolderId);
@@ -180,20 +180,20 @@ export async function updateFolder(
 export async function deleteFolder(
   ownerUserId: string,
   folderIdInput: unknown,
-  moveToInbox: boolean,
+  moveToRoot: boolean,
   scopeInput?: unknown,
 ) {
   const scope = normalizeScope(scopeInput);
   const folderId = assertSafeId(folderIdInput, "folder id");
   const folder = await getFolderForUser(ownerUserId, folderId, scope);
 
-  if (isDefaultFolder(folder)) {
+  if (isGroupDefaultFolder(folder)) {
     throw new Error("Default folder cannot be deleted.");
   }
 
   const allFolders = await listRawFolders(ownerUserId, scope);
   const folderIds = [folder.id, ...getDescendantFolderIds(allFolders, folder.id)];
-  const inbox = moveToInbox ? await ensureDefaultFolder(ownerUserId, scope) : null;
+  const targetFolder = moveToRoot && scope === "group" ? await ensureDefaultFolder(ownerUserId, scope) : null;
 
   getDb().transaction((tx) => {
     const activeNotes = tx
@@ -208,14 +208,14 @@ export async function deleteFolder(
       )
       .all();
 
-    if (activeNotes.length > 0 && !inbox) {
+    if (activeNotes.length > 0 && !moveToRoot) {
       throw new Error("Folder is not empty.");
     }
 
     if (activeNotes.length > 0) {
       tx.update(notes)
         .set({
-          folderId: inbox?.id ?? null,
+          folderId: targetFolder?.id ?? null,
           updatedAt: new Date().toISOString(),
           updatedByUserId: ownerUserId,
         })
@@ -308,8 +308,12 @@ function defaultFolderName(scope: NoteScope) {
   return scope === "group" ? GROUP_INBOX_NAME : INBOX_NAME;
 }
 
-function isDefaultFolder(folder: typeof folders.$inferSelect) {
-  return folder.parentFolderId === null && folder.name === defaultFolderName(normalizeScope(folder.scope));
+function isGroupDefaultFolder(folder: typeof folders.$inferSelect) {
+  return (
+    normalizeScope(folder.scope) === "group" &&
+    folder.parentFolderId === null &&
+    folder.name === GROUP_INBOX_NAME
+  );
 }
 
 function folderScopeFilter(ownerUserId: string, scope: NoteScope) {
