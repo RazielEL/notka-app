@@ -221,7 +221,7 @@ function splitTableLine(line: string) {
     }
 
     if (char === "|") {
-      cells.push(current.trim());
+      cells.push(stripTableCellPadding(current));
       current = "";
       continue;
     }
@@ -229,8 +229,12 @@ function splitTableLine(line: string) {
     current += char;
   }
 
-  cells.push(current.trim());
+  cells.push(stripTableCellPadding(current));
   return cells;
+}
+
+function stripTableCellPadding(value: string) {
+  return value.replace(/^ /, "").replace(/ $/, "");
 }
 
 function normalizeRow(row: string[], length: number) {
@@ -238,5 +242,5 @@ function normalizeRow(row: string[], length: number) {
 }
 
 function escapeTableCell(value: string) {
-  return value.replace(/\r?\n/g, " ").replace(/\|/g, "\\|").trim();
+  return value.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
 }
