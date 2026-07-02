@@ -1,7 +1,7 @@
 services:
   notka:
+    image: ghcr.io/razielel/notka-app:latest
     container_name: notka
-    build: .
     restart: unless-stopped
     env_file: .env
     ports:

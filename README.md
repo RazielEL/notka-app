@@ -1,54 +1,45 @@
 # Notka
 
-Notka is a minimal self-hosted notes app for Markdown notes, checklists, shared group notes, alerts, calendar planning, and simple everyday organization.
+Notka is a minimal self-hosted notes app for Markdown notes, checklists, shared group notes, alerts, and everyday organization.
 
-It is built for private self-hosted use, with Docker-first deployment and persistent local storage.
-
-Notes and checklists are the same thing: a checklist is just Markdown using `- [ ]` and `- [x]`.
+It is designed for private self-hosted use, especially behind Tailscale or another private network. App login is still required.
 
 ## Features
 
 - Markdown notes with live preview
-- Checklist support with progress indicators
-- Personal notes
-- Shared group notes for all registered users
-- Folder organization with nested folders
+- Checklists with progress indicators
+- Personal notes and shared group notes
+- Folders and nested folders
 - Pinned notes
 - Built-in templates and custom templates
-- Note alerts and calendar view
+- Alerts and calendar view
 - English and Polish interface
-- Light and dark mode
-- Multiple color themes
-- Font preferences
+- Light/dark mode, color themes, and font preferences
 - Responsive desktop and mobile layout
-- PWA manifest support
 - SQLite metadata with Markdown files on disk
 - Docker Compose deployment
 
-## Quick Start With Docker
+## Docker Quick Start
 
-Create a `docker-compose.yml` file:
+Create a `.env` file:
 
-```yaml
-services:
-  notka:
-    image: ghcr.io/razielel/notka-app:latest
-    container_name: notka
-    restart: unless-stopped
-    ports:
-      - "13379:3000"
-    environment:
-      DATA_DIR: /data
-      SESSION_SECRET: "replace-with-a-long-random-secret"
-      SESSION_COOKIE_SECURE: "false"
-    volumes:
-      - ./data:/data
+```env
+NOTKA_HOST_PORT=13379
+SESSION_SECRET=replace-with-a-long-random-secret
+SESSION_COOKIE_SECURE=false
+DATA_DIR=/data
 ```
 
-Start Notka:
+Generate a stable session secret:
 
 ```bash
-docker compose up -d
+openssl rand -base64 48
+```
+
+Start the app from the source checkout:
+
+```bash
+docker compose up -d --build
 ```
 
 Open:
@@ -57,36 +48,11 @@ Open:
 http://localhost:13379
 ```
 
-On first launch, Notka will guide you through creating the first admin account.
+On first launch, Notka guides you through creating the first admin account.
 
-## Session Secret
+## GHCR Docker Image
 
-`SESSION_SECRET` is required for Docker and production. Generate a long stable value:
-
-```bash
-openssl rand -base64 48
-```
-
-Put it in your compose file or `.env` file:
-
-```env
-SESSION_SECRET=your-long-random-secret
-```
-
-Keep this value stable across restarts. Changing it will invalidate existing sessions.
-
-## Using An Env File
-
-Instead of putting environment variables directly in `docker-compose.yml`, you can use `.env`:
-
-```env
-NOTKA_HOST_PORT=13379
-SESSION_SECRET=your-long-random-secret
-SESSION_COOKIE_SECURE=false
-DATA_DIR=/data
-```
-
-Example compose file:
+To deploy without building locally, use the published GitHub Container Registry image:
 
 ```yaml
 services:
@@ -94,91 +60,31 @@ services:
     image: ghcr.io/razielel/notka-app:latest
     container_name: notka
     restart: unless-stopped
-    env_file:
-      - .env
+    env_file: .env
     ports:
       - "${NOTKA_HOST_PORT:-13379}:3000"
     volumes:
       - ./data:/data
 ```
 
-## Tailscale Or Private Network Deployment
-
-Notka is designed to work well behind a private network such as Tailscale.
-
-For a private HTTP deployment over Tailscale, keep:
-
-```env
-SESSION_COOKIE_SECURE=false
-```
-
-If you serve Notka through HTTPS, set:
-
-```env
-SESSION_COOKIE_SECURE=true
-```
-
-To bind Notka only to a Tailscale IP, use:
-
-```yaml
-ports:
-  - "100.x.y.z:13379:3000"
-```
-
-Replace `100.x.y.z` with your server's Tailscale IP.
-
-## Data Storage
-
-All persistent data lives in the mounted `/data` directory.
-
-This includes:
-
-- SQLite database
-- Markdown note files
-- Deleted notes
-- Templates
-- App metadata
-
-With the default Docker Compose setup, this is stored on the host in:
-
-```text
-./data
-```
-
-Do not mount or serve `./data` through a web server. It contains SQLite data, Markdown files, trash, templates, and session metadata.
-
-## Backup
-
-Recommended simple backup flow:
+Or use the included GHCR compose file:
 
 ```bash
-docker compose down
-tar -czf notka-data-backup-$(date +%F).tar.gz ./data
-docker compose up -d
+docker compose -f docker-compose.ghcr.yml up -d
 ```
 
-Back up the whole `data/` directory together so `app.db`, `app.db-wal`, Markdown notes, trash, and templates stay consistent.
+## Local Build
 
-## Updating
-
-Pull the newest image and restart:
+The default `docker-compose.yml` builds the image from this repository:
 
 ```bash
-docker compose pull
-docker compose up -d
+docker compose up -d --build
 ```
 
-Optionally clean old images:
-
-```bash
-docker image prune -f
-```
-
-## Local Development
+For local app development without Docker:
 
 ```bash
 pnpm install
-cp .env.example .env.local
 pnpm dev
 ```
 
@@ -188,40 +94,64 @@ Open:
 http://localhost:3000
 ```
 
-The development script stores local data in `./data`. Docker and production use `DATA_DIR=/data`.
+## Environment Variables
 
-## Useful Scripts
+| Variable | Required | Description |
+| --- | --- | --- |
+| `NOTKA_HOST_PORT` | No | Host port exposed by Docker Compose. Defaults to `13379`. |
+| `SESSION_SECRET` | Yes | Long stable secret used to sign sessions. Changing it invalidates existing sessions. |
+| `SESSION_COOKIE_SECURE` | No | Set to `true` only when serving Notka over HTTPS. Keep `false` for private HTTP over Tailscale. |
+| `DATA_DIR` | No | Persistent data directory inside the container. Defaults to `/data` in Docker examples. |
 
-```bash
-pnpm dev       # start the development server
-pnpm build     # production build
-pnpm start     # start a production server after build
-pnpm lint      # run Next.js linting
-pnpm typecheck # run TypeScript checks
-```
+## Private Network Recommendation
 
-Reset local development data:
-
-```bash
-pnpm db:reset:dev -- --yes
-```
-
-This is destructive. It removes local app data, including notes and the SQLite database.
-
-## Security Notes
-
-Notka is intended for private self-hosted use.
+Notka is intended for private self-hosted or Tailscale-style deployment.
 
 Recommended setup:
 
-- Run it behind Tailscale or another private network
+- Run it behind Tailscale, WireGuard, VPN, or another private network
 - Keep app login enabled
 - Use HTTPS if exposing it through a public domain
 - Set `SESSION_COOKIE_SECURE=true` when using HTTPS
-- Do not serve the `data/` directory directly
-- Back up the entire `data/` directory consistently
+- Do not expose it directly to the public internet without HTTPS, a reverse proxy, request limits, monitoring, and rate limiting
 
-Public internet exposure should use additional hardening such as HTTPS, reverse proxy protection, request limits, monitoring, and stronger abuse protection.
+After first setup, anyone who can access the instance can register an account from the login screen.
+
+## Backup
+
+All persistent app data is stored in the mounted `./data` directory by default.
+
+Recommended simple backup flow:
+
+```bash
+docker compose down
+tar -czf notka-data-backup-$(date +%F).tar.gz ./data
+docker compose up -d
+```
+
+Keep backups outside the app directory if the notes matter.
+
+## Updating
+
+When using the GHCR image:
+
+```bash
+docker compose -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+When building locally:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+Optionally remove old unused images:
+
+```bash
+docker image prune -f
+```
 
 ## Current Limitations
 
@@ -243,4 +173,4 @@ Public internet exposure should use additional hardening such as HTTPS, reverse 
 
 ## License
 
-TBD
+MIT
