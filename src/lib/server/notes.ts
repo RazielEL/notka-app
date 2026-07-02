@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, isNotNull, isNull, like, or } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, like, max, or } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import { getDb } from "@/db";
@@ -31,8 +31,10 @@ export function noteToSummaryDto(note: typeof notes.$inferSelect): NoteSummaryDt
     folderId: note.folderId,
     title: note.title,
     pinned: note.pinned === 1,
+    sortOrder: note.sortOrder,
     alertAt: note.alertAt,
     calendarAt: note.calendarAt,
+    deletedAt: note.deletedAt,
     excerpt: note.excerpt,
     checklistTotal: note.checklistTotal,
     checklistCompleted: note.checklistCompleted,
@@ -61,7 +63,32 @@ export async function listNotes(ownerUserId: string, searchInput?: unknown, scop
           )
         : and(...filters),
     )
-    .orderBy(desc(notes.pinned), desc(notes.updatedAt));
+    .orderBy(desc(notes.pinned), asc(notes.sortOrder), desc(notes.updatedAt));
+
+  return rows.map(noteToSummaryDto);
+}
+
+export async function listTrashNotes(ownerUserId: string, searchInput?: unknown, scopeInput?: unknown) {
+  const scope = normalizeScope(scopeInput);
+  const search = typeof searchInput === "string" ? searchInput.trim().slice(0, 120) : "";
+  const filters = [
+    ...noteScopeConditions(ownerUserId, scope),
+    isNotNull(notes.deletedAt),
+    eq(notes.archived, 0),
+  ];
+
+  const rows = await getDb()
+    .select()
+    .from(notes)
+    .where(
+      search
+        ? and(
+            ...filters,
+            or(like(notes.title, `%${search}%`), like(notes.excerpt, `%${search}%`)),
+          )
+        : and(...filters),
+    )
+    .orderBy(desc(notes.deletedAt), desc(notes.updatedAt));
 
   return rows.map(noteToSummaryDto);
 }
@@ -122,17 +149,23 @@ export async function createNote(ownerUserId: string, input: {
     typeof input.title === "string" && input.title.trim()
       ? normalizeName(input.title, "Untitled note")
       : titleFromContent(content);
+  const folderId = folder?.id ?? null;
+  const [orderRow] = await getDb()
+    .select({ value: max(notes.sortOrder) })
+    .from(notes)
+    .where(and(...noteScopeConditions(ownerUserId, scope), ...noteFolderConditions(folderId), isNull(notes.deletedAt)));
 
   const note = {
     id,
     ownerUserId,
     scope,
-    folderId: folder?.id ?? null,
+    folderId,
     createdByUserId: ownerUserId,
     updatedByUserId: ownerUserId,
     title,
     filePath,
     pinned: 0,
+    sortOrder: (orderRow?.value ?? 0) + 10,
     archived: 0,
     deletedAt: null,
     alertAt: null,
@@ -161,11 +194,12 @@ export async function getNoteDetail(
   ownerUserId: string,
   noteIdInput: unknown,
   scopeInput?: unknown,
+  deletedFilter: NoteDeletedFilter = "active",
 ) {
   const noteId = assertSafeId(noteIdInput, "note id");
 
   return withNoteMutationLock(noteId, async () => {
-    const note = await getNoteForUser(ownerUserId, noteId, scopeInput);
+    const note = await getNoteForUser(ownerUserId, noteId, scopeInput, deletedFilter);
     const content = await readMarkdownFile(note.filePath);
     return noteToDetailDto(note, content);
   });
@@ -176,6 +210,7 @@ export async function updateNote(ownerUserId: string, noteIdInput: unknown, inpu
   content?: unknown;
   folderId?: unknown;
   pinned?: unknown;
+  sortOrder?: unknown;
   alertAt?: unknown;
   calendarAt?: unknown;
   scope?: unknown;
@@ -190,6 +225,7 @@ async function updateNoteLocked(ownerUserId: string, noteId: string, input: {
   content?: unknown;
   folderId?: unknown;
   pinned?: unknown;
+  sortOrder?: unknown;
   alertAt?: unknown;
   calendarAt?: unknown;
   scope?: unknown;
@@ -216,6 +252,10 @@ async function updateNoteLocked(ownerUserId: string, noteId: string, input: {
 
   if (typeof input.pinned === "boolean") {
     updates.pinned = input.pinned ? 1 : 0;
+  }
+
+  if (input.sortOrder !== undefined) {
+    updates.sortOrder = normalizeSortOrder(input.sortOrder);
   }
 
   if ("alertAt" in input) {
@@ -275,6 +315,12 @@ export async function deleteNote(ownerUserId: string, noteIdInput: unknown, scop
   return withNoteMutationLock(noteId, async () => deleteNoteLocked(ownerUserId, noteId, scopeInput));
 }
 
+export async function hardDeleteNote(ownerUserId: string, noteIdInput: unknown, scopeInput?: unknown) {
+  const noteId = assertSafeId(noteIdInput, "note id");
+
+  return withNoteMutationLock(noteId, async () => hardDeleteNoteLocked(ownerUserId, noteId, scopeInput));
+}
+
 async function deleteNoteLocked(ownerUserId: string, noteId: string, scopeInput?: unknown) {
   const scope = normalizeScope(scopeInput);
   const note = await getNoteForUser(ownerUserId, noteId, scope);
@@ -310,6 +356,23 @@ async function deleteNoteLocked(ownerUserId: string, noteId: string, scopeInput?
   return { deletedId: note.id };
 }
 
+async function hardDeleteNoteLocked(ownerUserId: string, noteId: string, scopeInput?: unknown) {
+  const scope = normalizeScope(scopeInput);
+  const note = await getNoteForUser(ownerUserId, noteId, scope, "trash");
+  const result = getDb()
+    .delete(notes)
+    .where(and(eq(notes.id, note.id), ...noteScopeConditions(ownerUserId, scope), isNotNull(notes.deletedAt)))
+    .run();
+
+  if (result.changes === 0) {
+    throw new Error("Note was changed before it could be permanently deleted.");
+  }
+
+  await removeMarkdownFile(note.filePath);
+
+  return { deletedId: note.id, hardDeleted: true };
+}
+
 export async function getNoteContentForTemplate(
   ownerUserId: string,
   noteIdInput: unknown,
@@ -326,14 +389,27 @@ export async function getNoteContentForTemplate(
   });
 }
 
-async function getNoteForUser(ownerUserId: string, noteIdInput: unknown, scopeInput?: unknown) {
+type NoteDeletedFilter = "active" | "trash" | "any";
+
+async function getNoteForUser(
+  ownerUserId: string,
+  noteIdInput: unknown,
+  scopeInput?: unknown,
+  deletedFilter: NoteDeletedFilter = "active",
+) {
   const scope = normalizeScope(scopeInput);
   const noteId = assertSafeId(noteIdInput, "note id");
   const rows = await getDb()
     .select()
     .from(notes)
     .leftJoin(folders, eq(notes.folderId, folders.id))
-    .where(and(eq(notes.id, noteId), ...noteScopeConditions(ownerUserId, scope), isNull(notes.deletedAt)))
+    .where(
+      and(
+        eq(notes.id, noteId),
+        ...noteScopeConditions(ownerUserId, scope),
+        ...noteDeletedConditions(deletedFilter),
+      ),
+    )
     .limit(1);
 
   const row = rows[0];
@@ -379,10 +455,34 @@ function normalizeOptionalDateTime(value: unknown, label: string) {
   return parsed.toISOString();
 }
 
+function normalizeSortOrder(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error("Sort order must be a number.");
+  }
+
+  return Math.max(0, Math.trunc(value));
+}
+
 function noteScopeConditions(ownerUserId: string, scope: NoteScope) {
   return scope === "group"
     ? [eq(notes.scope, "group")]
     : [eq(notes.scope, "personal"), eq(notes.ownerUserId, ownerUserId)];
+}
+
+function noteFolderConditions(folderId: string | null) {
+  return folderId ? [eq(notes.folderId, folderId)] : [isNull(notes.folderId)];
+}
+
+function noteDeletedConditions(filter: NoteDeletedFilter) {
+  if (filter === "trash") {
+    return [isNotNull(notes.deletedAt)];
+  }
+
+  if (filter === "any") {
+    return [];
+  }
+
+  return [isNull(notes.deletedAt)];
 }
 
 function folderBelongsToScope(

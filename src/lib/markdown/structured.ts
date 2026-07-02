@@ -98,8 +98,8 @@ function parseChecklist(content: string) {
   let currentCategory: ChecklistCategory | null = null;
 
   for (const rawLine of content.split("\n")) {
-    const line = rawLine.trim();
-    const headingMatch = line.match(/^##\s+(.+)$/);
+    const trimmedLine = rawLine.trim();
+    const headingMatch = trimmedLine.match(/^##\s+(.+)$/);
 
     if (headingMatch) {
       currentCategory = {
@@ -110,7 +110,7 @@ function parseChecklist(content: string) {
       continue;
     }
 
-    const itemMatch = line.match(/^[-*]\s+\[([ xX])\]\s*(.*)$/);
+    const itemMatch = rawLine.match(/^\s*[-*]\s+\[([ xX])\]\s?(.*)$/);
 
     if (!itemMatch) {
       continue;

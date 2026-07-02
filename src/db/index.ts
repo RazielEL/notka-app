@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS notes (
   title TEXT NOT NULL,
   file_path TEXT NOT NULL,
   pinned INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   archived INTEGER NOT NULL DEFAULT 0,
   deleted_at TEXT,
   alert_at TEXT,
@@ -93,6 +94,7 @@ CREATE INDEX IF NOT EXISTS folders_parent_folder_id_idx ON folders(parent_folder
 CREATE INDEX IF NOT EXISTS notes_owner_user_id_idx ON notes(owner_user_id);
 CREATE INDEX IF NOT EXISTS notes_scope_idx ON notes(scope);
 CREATE INDEX IF NOT EXISTS notes_folder_id_idx ON notes(folder_id);
+CREATE INDEX IF NOT EXISTS notes_folder_sort_order_idx ON notes(scope, owner_user_id, folder_id, deleted_at, sort_order);
 CREATE INDEX IF NOT EXISTS notes_alert_at_idx ON notes(alert_at);
 CREATE INDEX IF NOT EXISTS notes_calendar_at_idx ON notes(calendar_at);
 CREATE INDEX IF NOT EXISTS notes_deleted_at_idx ON notes(deleted_at);
@@ -261,6 +263,47 @@ function runMigrations(database: Database.Database) {
     database
       .prepare("INSERT INTO __drizzle_migrations (id, applied_at) VALUES (?, ?)")
       .run(personalRootMigrationId, new Date().toISOString());
+  }
+
+  const noteSortOrderMigrationId = "0006_note_sort_order";
+  const noteSortOrderApplied = database
+    .prepare("SELECT id FROM __drizzle_migrations WHERE id = ?")
+    .get(noteSortOrderMigrationId);
+
+  if (!noteSortOrderApplied) {
+    const columns = database.prepare("PRAGMA table_info(notes)").all() as Array<{ name: string }>;
+    const hasSortOrder = columns.some((column) => column.name === "sort_order");
+
+    if (!hasSortOrder) {
+      database.exec("ALTER TABLE notes ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;");
+    }
+
+    database.exec(`
+      CREATE INDEX IF NOT EXISTS notes_folder_sort_order_idx
+      ON notes(scope, owner_user_id, folder_id, deleted_at, sort_order);
+
+      UPDATE notes
+      SET sort_order = (
+        SELECT COUNT(*) * 10
+        FROM notes AS ranked
+        WHERE ranked.deleted_at IS NULL
+          AND ranked.scope = notes.scope
+          AND ranked.owner_user_id = notes.owner_user_id
+          AND COALESCE(ranked.folder_id, '') = COALESCE(notes.folder_id, '')
+          AND (
+            ranked.pinned > notes.pinned
+            OR (ranked.pinned = notes.pinned AND ranked.updated_at > notes.updated_at)
+            OR (ranked.pinned = notes.pinned AND ranked.updated_at = notes.updated_at AND ranked.title < notes.title)
+            OR (ranked.pinned = notes.pinned AND ranked.updated_at = notes.updated_at AND ranked.title = notes.title AND ranked.id <= notes.id)
+          )
+      )
+      WHERE deleted_at IS NULL
+        AND sort_order = 0;
+    `);
+
+    database
+      .prepare("INSERT INTO __drizzle_migrations (id, applied_at) VALUES (?, ?)")
+      .run(noteSortOrderMigrationId, new Date().toISOString());
   }
 }
 

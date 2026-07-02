@@ -6,6 +6,7 @@ import {
   CalendarPlus,
   Check,
   ChevronDown,
+  ChevronUp,
   Code2,
   Columns2,
   Eye,
@@ -61,6 +62,7 @@ type NoteEditorProps = {
   onCreateTemplate: (noteId: string) => void;
   onCreateFromTemplate: (templateId: string) => void;
   onDirtyChange?: (dirty: boolean) => void;
+  isTrash?: boolean;
 };
 
 export function NoteEditor({
@@ -73,6 +75,7 @@ export function NoteEditor({
   onCreateTemplate,
   onCreateFromTemplate,
   onDirtyChange,
+  isTrash = false,
 }: NoteEditorProps) {
   const { language, t } = useI18n();
   const [title, setTitle] = useState(note.title);
@@ -139,6 +142,10 @@ export function NoteEditor({
   }, []);
 
   const saveNote = useCallback(async (forceTitle: boolean) => {
+    if (isTrash) {
+      return;
+    }
+
     if (status === "saving") {
       return;
     }
@@ -195,7 +202,7 @@ export function NoteEditor({
       setDirty(true);
       setStatus("unsaved");
     }
-  }, [content, note.id, onSaved, scope, status, title, titleDirty]);
+  }, [content, isTrash, note.id, onSaved, scope, status, title, titleDirty]);
 
   useEffect(() => {
     onDirtyChange?.(dirty || status === "saving");
@@ -238,6 +245,10 @@ export function NoteEditor({
   }
 
   function markContentDirty(value: string) {
+    if (isTrash) {
+      return;
+    }
+
     setContent(value);
     contentRef.current = value;
     setDirty(true);
@@ -391,11 +402,14 @@ export function NoteEditor({
   }
 
   async function deleteNote() {
-    if (!window.confirm(t("editor.moveToTrashConfirm"))) {
+    if (!window.confirm(isTrash ? t("editor.deleteForeverConfirm") : t("editor.moveToTrashConfirm"))) {
       return;
     }
 
-    const response = await fetch(`/api/notes/${note.id}?scope=${scope}`, { method: "DELETE" });
+    const response = await fetch(
+      `/api/notes/${note.id}?scope=${scope}${isTrash ? "&hard=true" : ""}`,
+      { method: "DELETE" },
+    );
 
     if (response.ok) {
       onDeleted(note.id);
@@ -403,6 +417,10 @@ export function NoteEditor({
   }
 
   function handleShortcut(event: KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) {
+    if (isTrash) {
+      return;
+    }
+
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
       event.preventDefault();
       void saveNote(true);
@@ -436,6 +454,7 @@ export function NoteEditor({
           value={title}
           onChange={changeTitle}
           onKeyDown={handleShortcut}
+          readOnly={isTrash}
           placeholder={t("editor.untitledNote")}
         />
         <div className="flex flex-wrap items-center gap-2">
@@ -456,29 +475,33 @@ export function NoteEditor({
                 ? t("editor.saving")
                 : t("editor.unsaved")}
           </span>
+          {!isTrash ? (
+            <>
+              <Button
+                type="button"
+                variant="icon"
+                title={t("editor.save")}
+                aria-label={t("editor.saveNote")}
+                onClick={() => void saveNote(true)}
+              >
+                <Save className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="icon"
+                title={note.pinned ? t("editor.unpin") : t("editor.pin")}
+                aria-label={note.pinned ? t("editor.unpinNote") : t("editor.pinNote")}
+                onClick={togglePin}
+              >
+                {note.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+              </Button>
+            </>
+          ) : null}
           <Button
             type="button"
             variant="icon"
-            title={t("editor.save")}
-            aria-label={t("editor.saveNote")}
-            onClick={() => void saveNote(true)}
-          >
-            <Save className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            variant="icon"
-            title={note.pinned ? t("editor.unpin") : t("editor.pin")}
-            aria-label={note.pinned ? t("editor.unpinNote") : t("editor.pinNote")}
-            onClick={togglePin}
-          >
-            {note.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
-          </Button>
-          <Button
-            type="button"
-            variant="icon"
-            title={t("editor.delete")}
-            aria-label={t("editor.deleteNote")}
+            title={isTrash ? t("editor.deleteForever") : t("editor.delete")}
+            aria-label={isTrash ? t("editor.deleteForeverNote") : t("editor.deleteNote")}
             onClick={deleteNote}
           >
             <Trash2 className="h-4 w-4" />
@@ -510,29 +533,30 @@ export function NoteEditor({
           <ViewModeToggle value={viewMode} onChange={setViewMode} />
         )}
 
-        <div className="relative min-w-0">
-          <button
-            className={cn(
-              "muted-button h-10 px-3 text-xs uppercase tracking-wide max-sm:w-10 max-sm:px-0",
-              note.alertAt &&
-                "border-teal-500/20 bg-teal-500/10 text-teal-700 dark:text-teal-200",
-              alertTone === "yellow" &&
-                "border-amber-400/25 bg-amber-500/10 text-amber-700 dark:text-amber-200",
-              alertTone === "red" &&
-                "border-rose-400/25 bg-rose-500/10 text-rose-700 dark:text-rose-200",
-            )}
-            type="button"
-            title={alertLabel ? t("editor.deadlineTitle", { date: alertLabel }) : t("editor.setAlert")}
-            aria-label={
-              alertLabel ? t("editor.editAlertDeadline", { date: alertLabel }) : t("editor.setAlert")
-            }
-            onClick={() => setAlertMenuOpen((open) => !open)}
-          >
-            <CalendarClock className="h-4 w-4" />
-            <span className="max-sm:hidden">{t("editor.setAlert")}</span>
-          </button>
-          {alertMenuOpen ? (
-            <div className="settings-popover fixed inset-x-3 top-32 z-30 max-h-[calc(100dvh-9rem)] overflow-y-auto rounded-2xl p-3 sm:absolute sm:inset-x-auto sm:left-0 sm:top-[calc(100%+0.5rem)] sm:w-[min(20rem,calc(100vw-2rem))]">
+        {!isTrash ? (
+          <div className="relative min-w-0">
+            <button
+              className={cn(
+                "muted-button h-10 px-3 text-xs uppercase tracking-wide max-sm:w-10 max-sm:px-0",
+                note.alertAt &&
+                  "border-teal-500/20 bg-teal-500/10 text-teal-700 dark:text-teal-200",
+                alertTone === "yellow" &&
+                  "border-amber-400/25 bg-amber-500/10 text-amber-700 dark:text-amber-200",
+                alertTone === "red" &&
+                  "border-rose-400/25 bg-rose-500/10 text-rose-700 dark:text-rose-200",
+              )}
+              type="button"
+              title={alertLabel ? t("editor.deadlineTitle", { date: alertLabel }) : t("editor.setAlert")}
+              aria-label={
+                alertLabel ? t("editor.editAlertDeadline", { date: alertLabel }) : t("editor.setAlert")
+              }
+              onClick={() => setAlertMenuOpen((open) => !open)}
+            >
+              <CalendarClock className="h-4 w-4" />
+              <span className="max-sm:hidden">{t("editor.setAlert")}</span>
+            </button>
+            {alertMenuOpen ? (
+              <div className="settings-popover fixed inset-x-3 top-32 z-30 max-h-[calc(100dvh-9rem)] overflow-y-auto rounded-2xl p-3 sm:absolute sm:inset-x-auto sm:left-0 sm:top-[calc(100%+0.5rem)] sm:w-[min(20rem,calc(100vw-2rem))]">
               <div className="mb-3 flex items-start gap-2">
                 <div
                   className={cn(
@@ -567,7 +591,7 @@ export function NoteEditor({
                   onChange={(event) => setAlertInput(event.target.value)}
                 />
               </label>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   variant="primary"
@@ -586,35 +610,38 @@ export function NoteEditor({
                   </Button>
                 ) : null}
               </div>
+                <PopoverCloseButton label={t("menu.hide")} onClick={() => setAlertMenuOpen(false)} />
             </div>
-          ) : null}
-        </div>
+            ) : null}
+          </div>
+        ) : null}
 
-        <div className="relative min-w-0">
-          <button
-            className={cn(
-              "muted-button h-10 px-3 text-xs uppercase tracking-wide max-sm:w-10 max-sm:px-0",
-              note.calendarAt &&
-                "border-teal-500/20 bg-teal-500/10 text-teal-700 dark:text-teal-200",
-            )}
-            type="button"
-            title={
-              calendarLabel
-                ? t("editor.calendarTitle", { date: calendarLabel })
-                : t("editor.addToCalendar")
-            }
-            aria-label={
-              calendarLabel
-                ? t("editor.editCalendarDate", { date: calendarLabel })
-                : t("editor.addToCalendar")
-            }
-            onClick={() => setCalendarMenuOpen((open) => !open)}
-          >
-            <CalendarPlus className="h-4 w-4" />
-            <span className="max-sm:hidden">{t("editor.addToCalendar")}</span>
-          </button>
-          {calendarMenuOpen ? (
-            <div className="settings-popover fixed inset-x-3 top-32 z-30 max-h-[calc(100dvh-9rem)] overflow-y-auto rounded-2xl p-3 sm:absolute sm:inset-x-auto sm:left-0 sm:top-[calc(100%+0.5rem)] sm:w-[min(20rem,calc(100vw-2rem))]">
+        {!isTrash ? (
+          <div className="relative min-w-0">
+            <button
+              className={cn(
+                "muted-button h-10 px-3 text-xs uppercase tracking-wide max-sm:w-10 max-sm:px-0",
+                note.calendarAt &&
+                  "border-teal-500/20 bg-teal-500/10 text-teal-700 dark:text-teal-200",
+              )}
+              type="button"
+              title={
+                calendarLabel
+                  ? t("editor.calendarTitle", { date: calendarLabel })
+                  : t("editor.addToCalendar")
+              }
+              aria-label={
+                calendarLabel
+                  ? t("editor.editCalendarDate", { date: calendarLabel })
+                  : t("editor.addToCalendar")
+              }
+              onClick={() => setCalendarMenuOpen((open) => !open)}
+            >
+              <CalendarPlus className="h-4 w-4" />
+              <span className="max-sm:hidden">{t("editor.addToCalendar")}</span>
+            </button>
+            {calendarMenuOpen ? (
+              <div className="settings-popover fixed inset-x-3 top-32 z-30 max-h-[calc(100dvh-9rem)] overflow-y-auto rounded-2xl p-3 sm:absolute sm:inset-x-auto sm:left-0 sm:top-[calc(100%+0.5rem)] sm:w-[min(20rem,calc(100vw-2rem))]">
               <div className="mb-3 flex items-start gap-2">
                 <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-teal-500/15 bg-teal-500/10 text-teal-700 dark:text-teal-300">
                   <CalendarPlus className="h-4 w-4" />
@@ -641,7 +668,7 @@ export function NoteEditor({
                   onChange={(event) => setCalendarInput(event.target.value)}
                 />
               </label>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   variant="primary"
@@ -660,11 +687,14 @@ export function NoteEditor({
                   </Button>
                 ) : null}
               </div>
+                <PopoverCloseButton label={t("menu.hide")} onClick={() => setCalendarMenuOpen(false)} />
             </div>
-          ) : null}
-        </div>
+            ) : null}
+          </div>
+        ) : null}
 
-        <div className="ml-auto flex min-w-0 items-center justify-end gap-2">
+        {!isTrash ? (
+          <div className="ml-auto flex min-w-0 items-center justify-end gap-2">
           {structuredNote?.kind === "checklist" ? (
             <Button
               type="button"
@@ -738,10 +768,12 @@ export function NoteEditor({
                     {t("editor.saveCurrentAsTemplate")}
                   </Button>
                 </div>
+                <PopoverCloseButton label={t("menu.hide")} onClick={() => setTemplateMenuOpen(false)} />
               </div>
             ) : null}
           </div>
         </div>
+        ) : null}
       </div>
 
       {structuredNote ? (
@@ -750,6 +782,7 @@ export function NoteEditor({
           onChecklistChange={changeChecklist}
           onTableChange={changeTable}
           onKeyDown={handleShortcut}
+          readOnly={isTrash}
         />
       ) : (
         <div
@@ -773,6 +806,7 @@ export function NoteEditor({
                 value={content}
                 onChange={changeContent}
                 onKeyDown={handleShortcut}
+                readOnly={isTrash}
                 spellCheck
                 placeholder={`# ${t("editor.untitledNote")}`}
               />
@@ -809,11 +843,13 @@ function StructuredEditor({
   onChecklistChange,
   onTableChange,
   onKeyDown,
+  readOnly,
 }: {
   note: NonNullable<StructuredNote>;
   onChecklistChange: (categories: ChecklistCategory[]) => void;
   onTableChange: (table: TableData) => void;
   onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
+  readOnly: boolean;
 }) {
   if (note.kind === "checklist") {
     return (
@@ -821,21 +857,31 @@ function StructuredEditor({
         categories={note.categories}
         onChange={onChecklistChange}
         onKeyDown={onKeyDown}
+        readOnly={readOnly}
       />
     );
   }
 
-  return <TableBuilder table={note.table} onChange={onTableChange} onKeyDown={onKeyDown} />;
+  return (
+    <TableBuilder
+      table={note.table}
+      onChange={onTableChange}
+      onKeyDown={onKeyDown}
+      readOnly={readOnly}
+    />
+  );
 }
 
 function ChecklistBuilder({
   categories,
   onChange,
   onKeyDown,
+  readOnly,
 }: {
   categories: ChecklistCategory[];
   onChange: (categories: ChecklistCategory[]) => void;
   onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
+  readOnly: boolean;
 }) {
   const { t } = useI18n();
 
@@ -926,6 +972,7 @@ function ChecklistBuilder({
                       updateCategory(categoryIndex, { name: event.target.value })
                     }
                     onKeyDown={onKeyDown}
+                    readOnly={readOnly}
                     placeholder={t("editor.category")}
                     aria-label={t("editor.categoryName")}
                   />
@@ -933,23 +980,27 @@ function ChecklistBuilder({
                     <span className="notka-badge">
                       {categoryCompleted}/{category.items.length}
                     </span>
-                    <Button
-                      type="button"
-                      className="h-9 px-3"
-                      onClick={() => addEntry(categoryIndex)}
-                    >
-                      <Plus className="h-4 w-4" />
-                      {t("editor.addEntry")}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="icon"
-                      title={t("editor.deleteCategory")}
-                      aria-label={t("editor.deleteCategoryLabel", { name: category.name })}
-                      onClick={() => deleteCategory(categoryIndex)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {!readOnly ? (
+                      <>
+                        <Button
+                          type="button"
+                          className="h-9 px-3"
+                          onClick={() => addEntry(categoryIndex)}
+                        >
+                          <Plus className="h-4 w-4" />
+                          {t("editor.addEntry")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="icon"
+                          title={t("editor.deleteCategory")}
+                          aria-label={t("editor.deleteCategoryLabel", { name: category.name })}
+                          onClick={() => deleteCategory(categoryIndex)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
+                    ) : null}
                   </div>
                 </div>
 
@@ -974,6 +1025,7 @@ function ChecklistBuilder({
                         )}
                         title={item.checked ? t("editor.markIncomplete") : t("editor.markComplete")}
                         aria-label={item.checked ? t("editor.markIncomplete") : t("editor.markComplete")}
+                        disabled={readOnly}
                         onClick={() =>
                           updateItem(categoryIndex, itemIndex, { checked: !item.checked })
                         }
@@ -990,20 +1042,23 @@ function ChecklistBuilder({
                           updateItem(categoryIndex, itemIndex, { text: event.target.value })
                         }
                         onKeyDown={onKeyDown}
+                        readOnly={readOnly}
                         placeholder={t("editor.newEntry")}
                       />
-                      <Button
-                        type="button"
-                        variant="icon"
-                        className="h-8 w-8 shrink-0 opacity-70 transition group-hover:opacity-100"
-                        title={t("editor.deleteEntry")}
-                        aria-label={t("editor.deleteEntryLabel", {
-                          name: item.text || itemIndex + 1,
-                        })}
-                        onClick={() => deleteEntry(categoryIndex, itemIndex)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      {!readOnly ? (
+                        <Button
+                          type="button"
+                          variant="icon"
+                          className="h-8 w-8 shrink-0 opacity-70 transition group-hover:opacity-100"
+                          title={t("editor.deleteEntry")}
+                          aria-label={t("editor.deleteEntryLabel", {
+                            name: item.text || itemIndex + 1,
+                          })}
+                          onClick={() => deleteEntry(categoryIndex, itemIndex)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -1020,10 +1075,12 @@ function TableBuilder({
   table,
   onChange,
   onKeyDown,
+  readOnly,
 }: {
   table: TableData;
   onChange: (table: TableData) => void;
   onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
+  readOnly: boolean;
 }) {
   const { t } = useI18n();
   const headers = table.headers.length > 0 ? table.headers : [t("editor.column", { number: 1 })];
@@ -1066,6 +1123,15 @@ function TableBuilder({
     });
   }
 
+  function deleteRow(rowIndex: number) {
+    const nextRows = rows.filter((_, index) => index !== rowIndex);
+
+    onChange({
+      headers,
+      rows: nextRows.length > 0 ? nextRows.map((row) => normalizeCells(row, headers.length)) : [headers.map(() => "")],
+    });
+  }
+
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-8 sm:py-7">
       <div className="mx-auto flex max-w-5xl flex-col gap-5">
@@ -1075,16 +1141,18 @@ function TableBuilder({
               {t("editor.table")}
             </h2>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" onClick={addColumn}>
-              <Plus className="h-4 w-4" />
-              {t("editor.addColumn")}
-            </Button>
-            <Button type="button" variant="primary" onClick={addRow}>
-              <Plus className="h-4 w-4" />
-              {t("editor.addRow")}
-            </Button>
-          </div>
+          {!readOnly ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" onClick={addColumn}>
+                <Plus className="h-4 w-4" />
+                {t("editor.addColumn")}
+              </Button>
+              <Button type="button" variant="primary" onClick={addRow}>
+                <Plus className="h-4 w-4" />
+                {t("editor.addRow")}
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         <div className="max-w-full overflow-x-auto rounded-2xl border border-black/[0.08] bg-white/35 shadow-sm shadow-slate-950/[0.03] dark:border-white/[0.08] dark:bg-white/[0.035] dark:shadow-black/10">
@@ -1105,10 +1173,14 @@ function TableBuilder({
                         updateHeaders(nextHeaders);
                       }}
                       onKeyDown={onKeyDown}
+                      readOnly={readOnly}
                       placeholder={t("editor.column", { number: columnIndex + 1 })}
                     />
                   </th>
                 ))}
+                {!readOnly ? (
+                  <th className="w-14 border-b border-black/[0.08] p-0 dark:border-white/[0.08]" />
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -1124,20 +1196,37 @@ function TableBuilder({
                         value={row[columnIndex] ?? ""}
                         onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)}
                         onKeyDown={onKeyDown}
+                        readOnly={readOnly}
                         placeholder={t("editor.empty")}
                       />
                     </td>
                   ))}
+                  {!readOnly ? (
+                    <td className="border-b border-black/[0.06] p-1.5 text-center dark:border-white/[0.06]">
+                      <Button
+                        type="button"
+                        variant="icon"
+                        className="h-8 w-8"
+                        title={t("editor.deleteRow")}
+                        aria-label={t("editor.deleteRowLabel", { number: rowIndex + 1 })}
+                        onClick={() => deleteRow(rowIndex)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        <Button type="button" className="self-start" onClick={addRow}>
-          <Plus className="h-4 w-4" />
-          {t("editor.addRow")}
-        </Button>
+        {!readOnly ? (
+          <Button type="button" className="self-start" onClick={addRow}>
+            <Plus className="h-4 w-4" />
+            {t("editor.addRow")}
+          </Button>
+        ) : null}
       </div>
     </div>
   );
@@ -1179,6 +1268,25 @@ function ViewModeToggle({
         </button>
       ))}
     </div>
+  );
+}
+
+function PopoverCloseButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-black/[0.08] bg-white/50 px-3 py-2 text-xs font-semibold uppercase text-slate-500 transition hover:bg-white/80 hover:text-slate-900 focus:outline-none focus:ring-4 focus:ring-teal-500/15 dark:border-white/[0.09] dark:bg-white/[0.05] dark:text-slate-400 dark:hover:bg-white/[0.09] dark:hover:text-white"
+      type="button"
+      onClick={onClick}
+    >
+      <ChevronUp className="h-3.5 w-3.5" />
+      {label}
+    </button>
   );
 }
 

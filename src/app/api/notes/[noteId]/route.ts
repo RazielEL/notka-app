@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { apiError, readJson, requireApiUser } from "@/lib/server/api";
-import { deleteNote, getNoteDetail, updateNote } from "@/lib/server/notes";
+import { deleteNote, getNoteDetail, hardDeleteNote, updateNote } from "@/lib/server/notes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +21,12 @@ export async function GET(_request: Request, { params }: RouteContext) {
     }
 
     const url = new URL(_request.url);
-    const note = await getNoteDetail(user.id, params.noteId, url.searchParams.get("scope"));
+    const note = await getNoteDetail(
+      user.id,
+      params.noteId,
+      url.searchParams.get("scope"),
+      url.searchParams.get("trash") === "true" ? "trash" : "active",
+    );
     return NextResponse.json({ note });
   } catch (error) {
     return apiError(error);
@@ -60,6 +65,10 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       update.pinned = body.pinned;
     }
 
+    if ("sortOrder" in body) {
+      update.sortOrder = body.sortOrder;
+    }
+
     if ("alertAt" in body) {
       update.alertAt = body.alertAt;
     }
@@ -91,7 +100,10 @@ export async function DELETE(_request: Request, { params }: RouteContext) {
     }
 
     const url = new URL(_request.url);
-    const result = await deleteNote(user.id, params.noteId, url.searchParams.get("scope"));
+    const result =
+      url.searchParams.get("hard") === "true"
+        ? await hardDeleteNote(user.id, params.noteId, url.searchParams.get("scope"))
+        : await deleteNote(user.id, params.noteId, url.searchParams.get("scope"));
     return NextResponse.json(result);
   } catch (error) {
     return apiError(error);

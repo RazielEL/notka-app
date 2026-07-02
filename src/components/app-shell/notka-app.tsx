@@ -5,6 +5,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   NotebookPen,
   PanelLeftOpen,
   Pin,
@@ -40,6 +41,7 @@ import type {
 import { cn } from "@/lib/utils";
 
 type AppArea = "personal" | "group" | "calendar";
+type DropPosition = "before" | "after";
 
 type SidebarSwipeGesture = {
   pointerId: number;
@@ -83,6 +85,7 @@ export function NotkaApp({
   const { language, t } = useI18n();
   const [folders, setFolders] = useState(initialFolders);
   const [notes, setNotes] = useState(initialNotes);
+  const [trashNotes, setTrashNotes] = useState<NoteSummaryDto[]>([]);
   const [templates, setTemplates] = useState(initialTemplates);
   const [groupUsers, setGroupUsers] = useState<AppUserDto[]>([]);
   const [calendarNotes, setCalendarNotes] = useState<NoteSummaryDto[]>([]);
@@ -91,6 +94,7 @@ export function NotkaApp({
   const [activeArea, setActiveArea] = useState<AppArea>("personal");
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(defaultFolderId);
   const [selectedNote, setSelectedNote] = useState<NoteDetailDto | null>(null);
+  const [selectedTrash, setSelectedTrash] = useState(false);
   const [search, setSearch] = useState("");
   const [loadingNoteId, setLoadingNoteId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -103,12 +107,22 @@ export function NotkaApp({
   const sidebarSwipeRef = useRef<SidebarSwipeGesture | null>(null);
   const currentScope: NoteScope = activeArea === "group" ? "group" : "personal";
 
+  const refreshTrashNotes = useCallback(async (scope: NoteScope = currentScope) => {
+    const response = await fetch(`/api/notes?scope=${scope}&trash=true`);
+
+    if (response.ok) {
+      const body = await response.json();
+      setTrashNotes(body.notes as NoteSummaryDto[]);
+    }
+  }, [currentScope]);
+
   const refreshFoldersAndNotes = useCallback(async (scope: NoteScope = currentScope) => {
     const requestId = listRequestIdRef.current + 1;
     listRequestIdRef.current = requestId;
-    const [foldersResponse, notesResponse] = await Promise.all([
+    const [foldersResponse, notesResponse, trashResponse] = await Promise.all([
       fetch(`/api/folders?scope=${scope}`),
       fetch(`/api/notes?scope=${scope}`),
+      fetch(`/api/notes?scope=${scope}&trash=true`),
     ]);
 
     if (listRequestIdRef.current !== requestId) {
@@ -123,6 +137,11 @@ export function NotkaApp({
     if (notesResponse.ok) {
       const body = await notesResponse.json();
       setNotes(body.notes as NoteSummaryDto[]);
+    }
+
+    if (trashResponse.ok) {
+      const body = await trashResponse.json();
+      setTrashNotes(body.notes as NoteSummaryDto[]);
     }
   }, [currentScope]);
 
@@ -264,7 +283,8 @@ export function NotkaApp({
 
     return {
       pinnedNotes: notes.filter((note) => note.pinned && matchesSearch(note)),
-      sidebarNotes: notes.filter(matchesSearch).sort(sortNotesByUpdated),
+      sidebarNotes: notes.filter(matchesSearch).sort(sortNotesByImportance),
+      trashNotes: trashNotes.filter(matchesSearch).sort(sortTrashNotes),
       notes: notes
         .filter((note) => {
           if (query) {
@@ -277,9 +297,9 @@ export function NotkaApp({
 
           return note.folderId === selectedFolderId;
         })
-        .sort(sortNotesByUpdated),
+        .sort(sortNotesByImportance),
     };
-  }, [notes, search, selectedFolderId]);
+  }, [notes, search, selectedFolderId, trashNotes]);
   const alertShortcutNote = useMemo(
     () =>
       notes
@@ -295,6 +315,7 @@ export function NotkaApp({
 
   function selectFolder(folderId: string) {
     noteRequestIdRef.current += 1;
+    setSelectedTrash(false);
     setSelectedFolderId(folderId);
     setSelectedNote(null);
     setLoadingNoteId(null);
@@ -305,6 +326,7 @@ export function NotkaApp({
 
   function selectAllNotes() {
     noteRequestIdRef.current += 1;
+    setSelectedTrash(false);
     setSelectedFolderId(null);
     setSelectedNote(null);
     setLoadingNoteId(null);
@@ -313,15 +335,29 @@ export function NotkaApp({
     closeSidebarOnMobile();
   }
 
-  async function selectNote(noteId: string) {
-    await selectNoteByScope(noteId, currentScope);
+  function selectTrash() {
+    noteRequestIdRef.current += 1;
+    setSelectedTrash(true);
+    setSelectedFolderId(null);
+    setSelectedNote(null);
+    setLoadingNoteId(null);
+    setEditorHasUnsavedChanges(false);
+    closeSidebarOnMobile();
   }
 
-  async function selectNoteByScope(noteId: string, scope: NoteScope) {
+  async function selectNote(noteId: string) {
+    await selectNoteByScope(noteId, currentScope, false);
+  }
+
+  async function selectTrashNote(noteId: string) {
+    await selectNoteByScope(noteId, currentScope, true);
+  }
+
+  async function selectNoteByScope(noteId: string, scope: NoteScope, trash = false) {
     const requestId = noteRequestIdRef.current + 1;
     noteRequestIdRef.current = requestId;
     setLoadingNoteId(noteId);
-    const response = await fetch(`/api/notes/${noteId}?scope=${scope}`);
+    const response = await fetch(`/api/notes/${noteId}?scope=${scope}${trash ? "&trash=true" : ""}`);
     const body = await response.json().catch(() => ({}));
 
     if (noteRequestIdRef.current !== requestId) {
@@ -332,6 +368,7 @@ export function NotkaApp({
 
     if (response.ok) {
       setSelectedNote(body.note as NoteDetailDto);
+      setSelectedTrash(trash);
       closeSidebarOnMobile();
     }
   }
@@ -343,7 +380,9 @@ export function NotkaApp({
     setActiveArea(nextArea);
     setFolders([]);
     setNotes([]);
+    setTrashNotes([]);
     setSelectedNote(null);
+    setSelectedTrash(false);
     setSelectedFolderId(note.folderId);
     setSearch("");
     setEditorHasUnsavedChanges(false);
@@ -354,7 +393,7 @@ export function NotkaApp({
     }
 
     await refreshFoldersAndNotes(note.scope);
-    await selectNoteByScope(note.id, note.scope);
+    await selectNoteByScope(note.id, note.scope, false);
   }
 
   async function createNote(templateId?: string, targetFolderId: string | null = selectedFolderId) {
@@ -372,6 +411,7 @@ export function NotkaApp({
 
     if (response.ok) {
       const note = body.note as NoteDetailDto;
+      setSelectedTrash(false);
       upsertNote(note);
       setSelectedNote(note);
       closeSidebarOnMobile();
@@ -433,10 +473,11 @@ export function NotkaApp({
   }
 
   async function moveNoteToFolder(noteId: string, folderId: string | null) {
+    const sortOrder = getNextNoteSortOrder(notes, folderId, noteId);
     const response = await fetch(`/api/notes/${noteId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ folderId, scope: currentScope }),
+      body: JSON.stringify({ folderId, sortOrder, scope: currentScope }),
     });
     const body = await response.json().catch(() => ({}));
 
@@ -447,6 +488,62 @@ export function NotkaApp({
       if (selectedNote?.id === note.id) {
         setSelectedNote(note);
       }
+    }
+  }
+
+  async function reorderNote(
+    noteId: string,
+    targetFolderId: string | null,
+    targetNoteId: string,
+    position: DropPosition,
+  ) {
+    const nextNotes = reorderNotes(notes, noteId, targetFolderId, targetNoteId, position);
+
+    if (!nextNotes) {
+      return;
+    }
+
+    const changedNotes = nextNotes.filter((next) => {
+      const current = notes.find((note) => note.id === next.id);
+      return current && (current.folderId !== next.folderId || current.sortOrder !== next.sortOrder);
+    });
+
+    if (changedNotes.length === 0) {
+      return;
+    }
+
+    setNotes(nextNotes.sort(sortNotesByImportance));
+
+    if (selectedNote && changedNotes.some((note) => note.id === selectedNote.id)) {
+      const updatedSelected = nextNotes.find((note) => note.id === selectedNote.id);
+
+      if (updatedSelected) {
+        setSelectedNote({ ...selectedNote, ...updatedSelected });
+      }
+    }
+
+    try {
+      const responses = await Promise.all(
+        changedNotes.map((note) =>
+          fetch(`/api/notes/${note.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              folderId: note.folderId,
+              sortOrder: note.sortOrder,
+              scope: currentScope,
+            }),
+          }),
+        ),
+      );
+
+      if (responses.every((response) => response.ok)) {
+        return;
+      }
+
+      await refreshFoldersAndNotes(currentScope);
+    } catch {
+      await refreshFoldersAndNotes(currentScope);
     }
   }
 
@@ -511,7 +608,7 @@ export function NotkaApp({
         ? current.map((entry) => (entry.id === summary.id ? summary : entry))
         : [summary, ...current];
 
-      return next.sort(sortNotesByUpdated);
+      return next.sort(sortNotesByImportance);
     });
 
     if (summary.alertAt || summary.calendarAt) {
@@ -521,7 +618,7 @@ export function NotkaApp({
           ? current.map((entry) => (entry.id === summary.id ? summary : entry))
           : [summary, ...current];
 
-        return next.sort(sortNotesByUpdated);
+        return next.sort(sortNotesByImportance);
       });
     } else {
       setCalendarNotes((current) => current.filter((entry) => entry.id !== summary.id));
@@ -535,7 +632,12 @@ export function NotkaApp({
 
   function handleDeleted(noteId: string) {
     noteRequestIdRef.current += 1;
-    setNotes((current) => current.filter((note) => note.id !== noteId));
+    if (selectedTrash) {
+      setTrashNotes((current) => current.filter((note) => note.id !== noteId));
+    } else {
+      setNotes((current) => current.filter((note) => note.id !== noteId));
+      void refreshTrashNotes(currentScope);
+    }
     setSelectedNote(null);
     setLoadingNoteId(null);
     setEditorHasUnsavedChanges(false);
@@ -562,7 +664,9 @@ export function NotkaApp({
     noteRequestIdRef.current += 1;
     setFolders([]);
     setNotes([]);
+    setTrashNotes([]);
     setSelectedNote(null);
+    setSelectedTrash(false);
     setLoadingNoteId(null);
     setSearch("");
     setSelectedFolderId(null);
@@ -686,21 +790,26 @@ export function NotkaApp({
           folders={folders}
           alertShortcutNote={alertShortcutNote}
           pinnedNotes={filtered.pinnedNotes}
-          selectedFolderId={selectedFolderId}
+          trashNotes={filtered.trashNotes}
+          selectedFolderId={selectedTrash ? null : selectedFolderId}
           selectedNoteId={selectedNote?.id ?? loadingNoteId}
+          selectedTrash={selectedTrash}
           notes={filtered.sidebarNotes}
           search={search}
           onSearchChange={setSearch}
           onAreaChange={changeArea}
           onSelectFolder={selectFolder}
           onSelectAllNotes={selectAllNotes}
+          onSelectTrash={selectTrash}
           onSelectNote={selectNote}
+          onSelectTrashNote={selectTrashNote}
           onCreateNoteInFolder={(folderId) => void createNote(undefined, folderId)}
           onCreateFolder={createFolder}
           onRenameFolder={renameFolder}
           onDeleteFolder={deleteFolder}
           onMoveFolder={moveFolder}
           onMoveNoteToFolder={moveNoteToFolder}
+          onReorderNote={reorderNote}
           onCloseSidebar={() => setSidebarOpen(false)}
           preferences={preferences}
           onPreferencesChange={updatePreferences}
@@ -725,13 +834,24 @@ export function NotkaApp({
           key={selectedNote.id}
           note={selectedNote}
           scope={currentScope}
-          folderPath={buildFolderPath(folders, selectedNote.folderId, language)}
+          folderPath={selectedTrash ? `/${t("sidebar.trash")}` : buildFolderPath(folders, selectedNote.folderId, language)}
           templates={templates}
           onSaved={handleSaved}
           onDeleted={handleDeleted}
           onCreateTemplate={createTemplate}
           onCreateFromTemplate={(templateId) => void createNote(templateId)}
           onDirtyChange={setEditorHasUnsavedChanges}
+          isTrash={selectedTrash}
+        />
+      ) : selectedTrash ? (
+        <FolderOverview
+          areaLabel={activeArea === "group" ? t("nav.groupNotes") : t("nav.personalNotes")}
+          title={t("sidebar.trash")}
+          path={`/${t("sidebar.trash")}`}
+          emptyText={t("overview.noTrashNotes")}
+          groupUsers={[]}
+          notes={filtered.trashNotes}
+          onSelectNote={(noteId) => void selectTrashNote(noteId)}
         />
       ) : (
         <FolderOverview
@@ -797,8 +917,10 @@ function toSummary(note: NoteDetailDto | NoteSummaryDto): NoteSummaryDto {
     folderId: note.folderId,
     title: note.title,
     pinned: note.pinned,
+    sortOrder: note.sortOrder,
     alertAt: note.alertAt,
     calendarAt: note.calendarAt,
+    deletedAt: note.deletedAt,
     excerpt: note.excerpt,
     checklistTotal: note.checklistTotal,
     checklistCompleted: note.checklistCompleted,
@@ -823,7 +945,7 @@ function FolderOverview({
   emptyText: string;
   groupUsers: AppUserDto[];
   notes: NoteSummaryDto[];
-  onCreateNote: () => void;
+  onCreateNote?: () => void;
   onSelectNote: (noteId: string) => void;
 }) {
   const { t } = useI18n();
@@ -843,10 +965,12 @@ function FolderOverview({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {groupUsers.length > 0 ? <GroupAudience users={groupUsers} /> : null}
-          <Button type="button" variant="primary" onClick={onCreateNote}>
-            <Plus className="h-4 w-4" />
-            {t("overview.newNote")}
-          </Button>
+          {onCreateNote ? (
+            <Button type="button" variant="primary" onClick={onCreateNote}>
+              <Plus className="h-4 w-4" />
+              {t("overview.newNote")}
+            </Button>
+          ) : null}
         </div>
       </header>
 
@@ -1193,6 +1317,7 @@ function GroupAudience({ users }: { users: AppUserDto[] }) {
               </div>
             ))}
           </div>
+          <PopoverCloseButton label={t("menu.hide")} onClick={() => setOpen(false)} />
         </div>
       ) : null}
     </div>
@@ -1215,6 +1340,7 @@ function FolderOverviewNote({
       className={cn(
         "group flex w-full items-start gap-3 rounded-xl border border-transparent bg-white/25 px-4 py-3 text-left transition hover:border-teal-500/20 hover:bg-white/45 focus:outline-none focus:ring-4 focus:ring-teal-500/10 dark:bg-white/[0.035] dark:hover:bg-white/[0.065]",
         noteAlertClass(alertTone),
+        note.pinned && pinnedNoteClass(),
       )}
       type="button"
       draggable
@@ -1280,6 +1406,29 @@ function noteAlertClass(tone: AlertTone) {
   }
 
   return "";
+}
+
+function pinnedNoteClass() {
+  return "border-amber-400/35 bg-amber-300/20 text-amber-950 shadow-sm shadow-amber-500/10 hover:border-amber-400/45 hover:bg-amber-300/28 dark:border-amber-300/20 dark:bg-amber-400/[0.13] dark:text-amber-100 dark:hover:bg-amber-400/[0.18]";
+}
+
+function PopoverCloseButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-black/[0.08] bg-white/50 px-3 py-2 text-xs font-semibold uppercase text-slate-500 transition hover:bg-white/80 hover:text-slate-900 focus:outline-none focus:ring-4 focus:ring-teal-500/15 dark:border-white/[0.09] dark:bg-white/[0.05] dark:text-slate-400 dark:hover:bg-white/[0.09] dark:hover:text-white"
+      type="button"
+      onClick={onClick}
+    >
+      <ChevronUp className="h-3.5 w-3.5" />
+      {label}
+    </button>
+  );
 }
 
 type CalendarTone = "green" | "yellow" | "red";
@@ -1455,8 +1604,74 @@ function sortFolders(a: FolderDto, b: FolderDto) {
   );
 }
 
-function sortNotesByUpdated(a: NoteSummaryDto, b: NoteSummaryDto) {
-  return b.updatedAt.localeCompare(a.updatedAt);
+function sortNotesByImportance(a: NoteSummaryDto, b: NoteSummaryDto) {
+  return (
+    Number(b.pinned) - Number(a.pinned) ||
+    a.sortOrder - b.sortOrder ||
+    b.updatedAt.localeCompare(a.updatedAt) ||
+    a.title.localeCompare(b.title)
+  );
+}
+
+function sortTrashNotes(a: NoteSummaryDto, b: NoteSummaryDto) {
+  return (
+    (b.deletedAt ?? "").localeCompare(a.deletedAt ?? "") ||
+    b.updatedAt.localeCompare(a.updatedAt)
+  );
+}
+
+function getNextNoteSortOrder(
+  notes: NoteSummaryDto[],
+  folderId: string | null,
+  excludeNoteId?: string,
+) {
+  return (
+    notes
+      .filter((note) => note.id !== excludeNoteId && (note.folderId ?? null) === folderId)
+      .reduce((max, note) => Math.max(max, note.sortOrder), 0) + 10
+  );
+}
+
+function reorderNotes(
+  notes: NoteSummaryDto[],
+  noteId: string,
+  targetFolderId: string | null,
+  targetNoteId: string,
+  position: DropPosition,
+) {
+  const dragged = notes.find((note) => note.id === noteId);
+
+  if (!dragged) {
+    return null;
+  }
+
+  const siblings = notes
+    .filter((note) => note.id !== noteId && (note.folderId ?? null) === targetFolderId)
+    .sort(sortNotesByImportance);
+  const targetIndex = siblings.findIndex((note) => note.id === targetNoteId);
+
+  if (targetIndex < 0) {
+    return null;
+  }
+
+  const insertIndex = position === "before" ? targetIndex : targetIndex + 1;
+  const orderedSiblings = [...siblings];
+  orderedSiblings.splice(insertIndex, 0, { ...dragged, folderId: targetFolderId });
+
+  const orderUpdates = new Map(
+    orderedSiblings.map((note, index) => [
+      note.id,
+      {
+        folderId: targetFolderId,
+        sortOrder: (index + 1) * 10,
+      },
+    ]),
+  );
+
+  return notes.map((note) => {
+    const update = orderUpdates.get(note.id);
+    return update ? { ...note, ...update } : note;
+  });
 }
 
 function buildFolderPath(folders: FolderDto[], folderId: string | null, language: Language) {

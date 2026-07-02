@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { apiError, readJson, requireApiUser } from "@/lib/server/api";
-import { createNote, listNotes } from "@/lib/server/notes";
+import { createNote, listNotes, listTrashNotes } from "@/lib/server/notes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,11 +14,12 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const notes = await listNotes(
-    user.id,
-    url.searchParams.get("search") ?? "",
-    url.searchParams.get("scope") ?? "personal",
-  );
+  const scope = url.searchParams.get("scope") ?? "personal";
+  const search = url.searchParams.get("search") ?? "";
+  const notes =
+    url.searchParams.get("trash") === "true"
+      ? await listTrashNotes(user.id, search, scope)
+      : await listNotes(user.id, search, scope);
 
   return NextResponse.json({ notes });
 }

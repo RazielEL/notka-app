@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS notes (
   title TEXT NOT NULL,
   file_path TEXT NOT NULL,
   pinned INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   archived INTEGER NOT NULL DEFAULT 0,
   deleted_at TEXT,
   alert_at TEXT,
@@ -77,6 +78,7 @@ CREATE INDEX IF NOT EXISTS folders_parent_folder_id_idx ON folders(parent_folder
 CREATE INDEX IF NOT EXISTS notes_owner_user_id_idx ON notes(owner_user_id);
 CREATE INDEX IF NOT EXISTS notes_scope_idx ON notes(scope);
 CREATE INDEX IF NOT EXISTS notes_folder_id_idx ON notes(folder_id);
+CREATE INDEX IF NOT EXISTS notes_folder_sort_order_idx ON notes(scope, owner_user_id, folder_id, deleted_at, sort_order);
 CREATE INDEX IF NOT EXISTS notes_alert_at_idx ON notes(alert_at);
 CREATE INDEX IF NOT EXISTS notes_calendar_at_idx ON notes(calendar_at);
 CREATE INDEX IF NOT EXISTS notes_deleted_at_idx ON notes(deleted_at);

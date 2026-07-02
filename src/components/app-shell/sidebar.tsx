@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   FileText,
   Folder,
   FolderPlus,
@@ -16,7 +17,7 @@ import {
   Settings,
   Trash2,
 } from "lucide-react";
-import { DragEvent, FormEvent, useMemo, useState } from "react";
+import { DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { languages, useI18n } from "@/components/i18n-provider";
 import { formatAlertDeadline, getAlertTone, type AlertTone } from "@/lib/alerts";
@@ -27,6 +28,12 @@ import { cn } from "@/lib/utils";
 
 const ROOT_FOLDER_ID = "__notka_root__";
 
+type DropPosition = "before" | "after";
+type NoteDragTarget = {
+  id: string;
+  position: DropPosition;
+};
+
 type AppArea = "personal" | "group" | "calendar";
 
 type SidebarProps = {
@@ -36,20 +43,30 @@ type SidebarProps = {
   alertShortcutNote: NoteSummaryDto | null;
   pinnedNotes: NoteSummaryDto[];
   notes: NoteSummaryDto[];
+  trashNotes: NoteSummaryDto[];
   selectedFolderId: string | null;
   selectedNoteId: string | null;
+  selectedTrash: boolean;
   search: string;
   onSearchChange: (value: string) => void;
   onAreaChange: (area: AppArea) => void;
   onSelectFolder: (folderId: string) => void;
   onSelectAllNotes: () => void;
+  onSelectTrash: () => void;
   onSelectNote: (noteId: string) => void;
+  onSelectTrashNote: (noteId: string) => void;
   onCreateNoteInFolder: (folderId: string) => void;
   onCreateFolder: (name: string, parentFolderId?: string | null) => Promise<void>;
   onRenameFolder: (folderId: string, name: string) => Promise<void>;
   onDeleteFolder: (folderId: string) => Promise<void>;
   onMoveFolder: (folderId: string, parentFolderId: string | null) => Promise<void>;
   onMoveNoteToFolder: (noteId: string, folderId: string | null) => Promise<void>;
+  onReorderNote: (
+    noteId: string,
+    targetFolderId: string | null,
+    targetNoteId: string,
+    position: DropPosition,
+  ) => Promise<void>;
   onCloseSidebar: () => void;
   preferences: UserPreferences;
   onPreferencesChange: (preferences: Partial<UserPreferences>) => void;
@@ -63,20 +80,25 @@ export function Sidebar({
   alertShortcutNote,
   pinnedNotes,
   notes,
+  trashNotes,
   selectedFolderId,
   selectedNoteId,
+  selectedTrash,
   search,
   onSearchChange,
   onAreaChange,
   onSelectFolder,
   onSelectAllNotes,
+  onSelectTrash,
   onSelectNote,
+  onSelectTrashNote,
   onCreateNoteInFolder,
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
   onMoveFolder,
   onMoveNoteToFolder,
+  onReorderNote,
   onCloseSidebar,
   preferences,
   onPreferencesChange,
@@ -88,10 +110,35 @@ export function Sidebar({
   const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
-  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
+  const [dragOverNote, setDragOverNote] = useState<NoteDragTarget | null>(null);
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(
+    () => new Set(folders.map((folder) => folder.id)),
+  );
+  const knownFolderIdsRef = useRef<Set<string>>(new Set(folders.map((folder) => folder.id)));
   const folderTree = useMemo(() => buildFolderTree(folders, 1), [folders]);
+  const allFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
+  const allFoldersCollapsed =
+    allFolderIds.length > 0 && allFolderIds.every((folderId) => collapsedFolderIds.has(folderId));
   const notesByFolder = useMemo(() => groupNotesByFolder(notes), [notes]);
   const rootNotes = notesByFolder.get(ROOT_FOLDER_ID) ?? [];
+
+  useEffect(() => {
+    const nextKnownIds = new Set(folders.map((folder) => folder.id));
+
+    setCollapsedFolderIds((current) => {
+      const next = new Set([...current].filter((folderId) => nextKnownIds.has(folderId)));
+
+      for (const folder of folders) {
+        if (!knownFolderIdsRef.current.has(folder.id)) {
+          next.add(folder.id);
+        }
+      }
+
+      return next;
+    });
+
+    knownFolderIdsRef.current = nextKnownIds;
+  }, [folders]);
 
   async function submitFolder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -128,6 +175,7 @@ export function Sidebar({
     event.preventDefault();
     event.stopPropagation();
     setDragOverFolderId(null);
+    setDragOverNote(null);
 
     const noteId = event.dataTransfer.getData("application/x-notka-note-id");
     const folderId = event.dataTransfer.getData("application/x-notka-folder-id");
@@ -145,6 +193,7 @@ export function Sidebar({
   async function dropOnRoot(event: DragEvent<HTMLElement>) {
     event.preventDefault();
     setDragOverFolderId(null);
+    setDragOverNote(null);
 
     const noteId = event.dataTransfer.getData("application/x-notka-note-id");
     const folderId = event.dataTransfer.getData("application/x-notka-folder-id");
@@ -159,6 +208,22 @@ export function Sidebar({
     }
   }
 
+  async function dropOnNote(
+    event: DragEvent<HTMLButtonElement>,
+    targetNote: NoteSummaryDto,
+    position: DropPosition,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragOverNote(null);
+
+    const noteId = event.dataTransfer.getData("application/x-notka-note-id");
+
+    if (noteId && noteId !== targetNote.id) {
+      await onReorderNote(noteId, targetNote.folderId, targetNote.id, position);
+    }
+  }
+
   function toggleFolder(folderId: string) {
     setCollapsedFolderIds((current) => {
       const next = new Set(current);
@@ -167,6 +232,24 @@ export function Sidebar({
         next.delete(folderId);
       } else {
         next.add(folderId);
+      }
+
+      return next;
+    });
+  }
+
+  function toggleAllFolders() {
+    setCollapsedFolderIds((current) => {
+      const next = new Set(current);
+
+      if (allFoldersCollapsed) {
+        for (const folderId of allFolderIds) {
+          next.delete(folderId);
+        }
+      } else {
+        for (const folderId of allFolderIds) {
+          next.add(folderId);
+        }
       }
 
       return next;
@@ -223,6 +306,7 @@ export function Sidebar({
                       onAreaChange("calendar");
                     }}
                   />
+                  <PopoverCloseButton label={t("menu.hide")} onClick={() => setSectionMenuOpen(false)} />
                 </div>
               ) : null}
             </div>
@@ -387,6 +471,7 @@ export function Sidebar({
                 {t("settings.signOut")}
               </button>
             </div>
+            <PopoverCloseButton label={t("menu.hide")} onClick={() => setSettingsOpen(false)} />
           </div>
         ) : null}
       </div>
@@ -458,15 +543,50 @@ export function Sidebar({
                 <button
                   className={cn(
                     "sidebar-item min-w-0",
-                    selectedFolderId === null && "sidebar-item-active",
+                    selectedTrash && "sidebar-item-active",
+                  )}
+                  type="button"
+                  onClick={onSelectTrash}
+                >
+                  <Trash2 className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{t("sidebar.trash")}</span>
+                  {trashNotes.length > 0 ? (
+                    <span className="notka-badge px-2 py-0.5 text-[11px]">{trashNotes.length}</span>
+                  ) : null}
+                </button>
+                {selectedTrash
+                  ? trashNotes.map((note) => (
+                      <TreeNoteItem
+                        key={`trash-${note.id}`}
+                        note={note}
+                        active={selectedNoteId === note.id}
+                        depth={1}
+                        draggable={false}
+                        onClick={() => onSelectTrashNote(note.id)}
+                      />
+                    ))
+                  : null}
+                <button
+                  className={cn(
+                    "sidebar-item min-w-0",
+                    selectedFolderId === null && !selectedTrash && "sidebar-item-active",
                   )}
                   type="button"
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={dropOnRoot}
-                  onClick={onSelectAllNotes}
+                  onClick={() => {
+                    toggleAllFolders();
+                    onSelectAllNotes();
+                  }}
                 >
                   <Folder className="h-4 w-4 shrink-0" />
                   <span className="truncate">{t("sidebar.allNotes")}</span>
+                  <ChevronRight
+                    className={cn(
+                      "ml-auto h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform",
+                      !allFoldersCollapsed && "rotate-90",
+                    )}
+                  />
                 </button>
                 {folderTree.map((folder) => (
                   <FolderTreeItem
@@ -475,6 +595,7 @@ export function Sidebar({
                     notesByFolder={notesByFolder}
                     selectedFolderId={selectedFolderId}
                     dragOverFolderId={dragOverFolderId}
+                    dragOverNote={dragOverNote}
                     selectedNoteId={selectedNoteId}
                     collapsedFolderIds={collapsedFolderIds}
                     onSelectFolder={onSelectFolder}
@@ -485,7 +606,9 @@ export function Sidebar({
                     onDeleteFolder={deleteFolder}
                     onBeginFolderDrag={beginFolderDrag}
                     onDragOverFolder={setDragOverFolderId}
+                    onDragOverNote={setDragOverNote}
                     onDropOnFolder={dropOnFolder}
+                    onDropOnNote={dropOnNote}
                   />
                 ))}
                 {rootNotes.map((note) => (
@@ -494,6 +617,9 @@ export function Sidebar({
                     note={note}
                     active={selectedNoteId === note.id}
                     depth={1}
+                    dragOverNote={dragOverNote}
+                    onDragOverNote={setDragOverNote}
+                    onDropOnNote={dropOnNote}
                     onClick={() => onSelectNote(note.id)}
                   />
                 ))}
@@ -516,6 +642,7 @@ function FolderTreeItem({
   notesByFolder,
   selectedFolderId,
   dragOverFolderId,
+  dragOverNote,
   selectedNoteId,
   collapsedFolderIds,
   onSelectFolder,
@@ -526,12 +653,15 @@ function FolderTreeItem({
   onDeleteFolder,
   onBeginFolderDrag,
   onDragOverFolder,
+  onDragOverNote,
   onDropOnFolder,
+  onDropOnNote,
 }: {
   folder: FolderNode;
   notesByFolder: Map<string, NoteSummaryDto[]>;
   selectedFolderId: string | null;
   dragOverFolderId: string | null;
+  dragOverNote: NoteDragTarget | null;
   selectedNoteId: string | null;
   collapsedFolderIds: Set<string>;
   onSelectFolder: (folderId: string) => void;
@@ -542,7 +672,13 @@ function FolderTreeItem({
   onDeleteFolder: (folderId: string) => Promise<void>;
   onBeginFolderDrag: (event: DragEvent<HTMLButtonElement>, folderId: string) => void;
   onDragOverFolder: (folderId: string | null) => void;
+  onDragOverNote: (target: NoteDragTarget | null) => void;
   onDropOnFolder: (event: DragEvent<HTMLElement>, targetFolderId: string) => Promise<void>;
+  onDropOnNote: (
+    event: DragEvent<HTMLButtonElement>,
+    targetNote: NoteSummaryDto,
+    position: DropPosition,
+  ) => Promise<void>;
 }) {
   const { language, t } = useI18n();
   const isActive = selectedFolderId === folder.id;
@@ -561,6 +697,7 @@ function FolderTreeItem({
         onDragOver={(event) => {
           event.preventDefault();
           onDragOverFolder(folder.id);
+          onDragOverNote(null);
         }}
         onDragLeave={() => onDragOverFolder(null)}
         onDrop={(event) => onDropOnFolder(event, folder.id)}
@@ -640,6 +777,7 @@ function FolderTreeItem({
               notesByFolder={notesByFolder}
               selectedFolderId={selectedFolderId}
               dragOverFolderId={dragOverFolderId}
+              dragOverNote={dragOverNote}
               selectedNoteId={selectedNoteId}
               collapsedFolderIds={collapsedFolderIds}
               onSelectFolder={onSelectFolder}
@@ -650,7 +788,9 @@ function FolderTreeItem({
               onDeleteFolder={onDeleteFolder}
               onBeginFolderDrag={onBeginFolderDrag}
               onDragOverFolder={onDragOverFolder}
+              onDragOverNote={onDragOverNote}
               onDropOnFolder={onDropOnFolder}
+              onDropOnNote={onDropOnNote}
             />
           ))}
           {folderNotes.map((note) => (
@@ -659,6 +799,9 @@ function FolderTreeItem({
               note={note}
               active={selectedNoteId === note.id}
               depth={folder.depth + 1}
+              dragOverNote={dragOverNote}
+              onDragOverNote={onDragOverNote}
+              onDropOnNote={onDropOnNote}
               onClick={() => onSelectNote(note.id)}
             />
           ))}
@@ -710,10 +853,19 @@ function groupNotesByFolder(notes: NoteSummaryDto[]) {
   }
 
   for (const [folderId, folderNotes] of grouped) {
-    grouped.set(folderId, folderNotes.sort((a, b) => a.title.localeCompare(b.title)));
+    grouped.set(folderId, folderNotes.sort(sortNotesForTree));
   }
 
   return grouped;
+}
+
+function sortNotesForTree(a: NoteSummaryDto, b: NoteSummaryDto) {
+  return (
+    Number(b.pinned) - Number(a.pinned) ||
+    a.sortOrder - b.sortOrder ||
+    b.updatedAt.localeCompare(a.updatedAt) ||
+    a.title.localeCompare(b.title)
+  );
 }
 
 function AreaMenuItem({
@@ -785,32 +937,72 @@ function TreeNoteItem({
   note,
   active,
   depth,
+  draggable = true,
+  dragOverNote,
+  onDragOverNote,
+  onDropOnNote,
   onClick,
 }: {
   note: NoteSummaryDto;
   active: boolean;
   depth: number;
+  draggable?: boolean;
+  dragOverNote?: NoteDragTarget | null;
+  onDragOverNote?: (target: NoteDragTarget | null) => void;
+  onDropOnNote?: (
+    event: DragEvent<HTMLButtonElement>,
+    targetNote: NoteSummaryDto,
+    position: DropPosition,
+  ) => Promise<void>;
   onClick: () => void;
 }) {
   const { language, t } = useI18n();
   const alertTone = getAlertTone(note.alertAt);
   const alertLabel = formatAlertDeadline(note.alertAt, language);
+  const isDropBefore = dragOverNote?.id === note.id && dragOverNote.position === "before";
+  const isDropAfter = dragOverNote?.id === note.id && dragOverNote.position === "after";
 
   return (
     <button
       className={cn(
         "sidebar-item mb-1 min-w-0 border border-transparent py-1.5 text-xs",
         noteAlertClass(alertTone),
+        note.pinned && pinnedNoteClass(),
+        isDropBefore && "border-t-teal-400 bg-teal-500/10",
+        isDropAfter && "border-b-teal-400 bg-teal-500/10",
         active && "sidebar-item-active",
       )}
       title={alertLabel ? t("editor.deadlineTitle", { date: alertLabel }) : undefined}
       style={{ paddingLeft: `${1.65 + depth * 0.9}rem` }}
       type="button"
-      draggable
+      draggable={draggable}
       onDragStart={(event) => {
+        if (!draggable) {
+          return;
+        }
+
         event.dataTransfer.setData("application/x-notka-note-id", note.id);
         event.dataTransfer.effectAllowed = "move";
       }}
+      onDragOver={
+        onDragOverNote && onDropOnNote
+          ? (event) => {
+              event.preventDefault();
+              onDragOverNote({ id: note.id, position: getNoteDropPosition(event) });
+            }
+          : undefined
+      }
+      onDragLeave={onDragOverNote ? () => onDragOverNote(null) : undefined}
+      onDrop={
+        onDropOnNote
+          ? (event) =>
+              onDropOnNote(
+                event,
+                note,
+                dragOverNote?.id === note.id ? dragOverNote.position : getNoteDropPosition(event),
+              )
+          : undefined
+      }
       onClick={onClick}
     >
       <FileText className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
@@ -857,6 +1049,7 @@ function NoteListItem({
         "sidebar-item mb-1.5 border border-transparent",
         compact ? "py-2" : "flex-col items-start gap-1.5",
         noteAlertClass(alertTone),
+        note.pinned && pinnedNoteClass(),
         active && "sidebar-item-active",
       )}
       title={compact ? note.title : alertLabel ? t("editor.deadlineTitle", { date: alertLabel }) : undefined}
@@ -866,7 +1059,10 @@ function NoteListItem({
       onClick={onClick}
     >
       {compact ? (
-        <span className="min-w-0 flex-1 truncate font-medium">{note.title}</span>
+        <>
+          {note.pinned ? <Pin className="h-3.5 w-3.5 shrink-0 text-amber-500" /> : null}
+          <span className="min-w-0 flex-1 truncate font-medium">{note.title}</span>
+        </>
       ) : (
         <>
           <span className="flex w-full items-center gap-2">
@@ -913,6 +1109,34 @@ function noteAlertClass(tone: AlertTone) {
   }
 
   return "";
+}
+
+function pinnedNoteClass() {
+  return "border-amber-400/35 bg-amber-300/20 text-amber-950 shadow-sm shadow-amber-500/10 hover:border-amber-400/45 hover:bg-amber-300/28 dark:border-amber-300/20 dark:bg-amber-400/[0.13] dark:text-amber-100 dark:hover:bg-amber-400/[0.18]";
+}
+
+function getNoteDropPosition(event: DragEvent<HTMLButtonElement>): DropPosition {
+  const rect = event.currentTarget.getBoundingClientRect();
+  return event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+}
+
+function PopoverCloseButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-black/[0.08] bg-white/50 px-3 py-2 text-xs font-semibold uppercase text-slate-500 transition hover:bg-white/80 hover:text-slate-900 focus:outline-none focus:ring-4 focus:ring-teal-500/15 dark:border-white/[0.09] dark:bg-white/[0.05] dark:text-slate-400 dark:hover:bg-white/[0.09] dark:hover:text-white"
+      type="button"
+      onClick={onClick}
+    >
+      <ChevronUp className="h-3.5 w-3.5" />
+      {label}
+    </button>
+  );
 }
 
 function EmptyLine({ text }: { text: string }) {

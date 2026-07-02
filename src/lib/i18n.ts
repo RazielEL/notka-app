@@ -2,6 +2,7 @@ import type { TemplateDto } from "@/lib/types";
 
 const en = {
   "app.description": "A minimal self-hosted Markdown notebook.",
+  "menu.hide": "Hide menu",
 
   "auth.brand": "NOTKA",
   "auth.loginTitle": "Welcome back",
@@ -64,6 +65,7 @@ const en = {
   "sidebar.newFolder": "New folder",
   "sidebar.folderName": "Folder name",
   "sidebar.add": "Add",
+  "sidebar.trash": "Trash",
   "sidebar.allNotes": "All notes",
   "sidebar.renameFolder": "Rename folder",
   "sidebar.renameFolderLabel": "Rename {name}",
@@ -78,6 +80,7 @@ const en = {
   "overview.newNote": "New note",
   "overview.noGroupNotes": "No group notes yet",
   "overview.noNotes": "No notes here yet.",
+  "overview.noTrashNotes": "Trash is empty.",
 
   "editor.untitledNote": "Untitled note",
   "editor.saved": "Saved",
@@ -92,6 +95,9 @@ const en = {
   "editor.delete": "Delete",
   "editor.deleteNote": "Delete note",
   "editor.moveToTrashConfirm": "Move this note to trash?",
+  "editor.deleteForever": "Delete forever",
+  "editor.deleteForeverNote": "Delete note permanently",
+  "editor.deleteForeverConfirm": "Permanently delete this note? This cannot be undone.",
   "editor.folder": "Folder",
   "editor.checklist": "Checklist",
   "editor.table": "Table",
@@ -136,6 +142,8 @@ const en = {
   "editor.markIncomplete": "Mark as incomplete",
   "editor.addColumn": "Add column",
   "editor.addRow": "Add row",
+  "editor.deleteRow": "Delete row",
+  "editor.deleteRowLabel": "Delete row {number}",
   "editor.column": "Column {number}",
   "editor.empty": "Empty",
   "editor.nothingToPreview": "Nothing to preview yet.",
@@ -177,6 +185,7 @@ export type TranslationKey = keyof typeof en;
 
 const pl: Record<TranslationKey, string> = {
   "app.description": "Minimalny, self-hosted notes Markdown.",
+  "menu.hide": "Ukryj menu",
 
   "auth.brand": "NOTKA",
   "auth.loginTitle": "Witaj ponownie",
@@ -239,6 +248,7 @@ const pl: Record<TranslationKey, string> = {
   "sidebar.newFolder": "Nowy folder",
   "sidebar.folderName": "Nazwa folderu",
   "sidebar.add": "Dodaj",
+  "sidebar.trash": "Kosz",
   "sidebar.allNotes": "Wszystkie notatki",
   "sidebar.renameFolder": "Zmień nazwę folderu",
   "sidebar.renameFolderLabel": "Zmień nazwę {name}",
@@ -253,6 +263,7 @@ const pl: Record<TranslationKey, string> = {
   "overview.newNote": "Nowa notatka",
   "overview.noGroupNotes": "Nie ma jeszcze notatek grupowych",
   "overview.noNotes": "Nie ma tu jeszcze notatek.",
+  "overview.noTrashNotes": "Kosz jest pusty.",
 
   "editor.untitledNote": "Notatka bez tytułu",
   "editor.saved": "Zapisano",
@@ -267,6 +278,9 @@ const pl: Record<TranslationKey, string> = {
   "editor.delete": "Usuń",
   "editor.deleteNote": "Usuń notatkę",
   "editor.moveToTrashConfirm": "Przenieść tę notatkę do kosza?",
+  "editor.deleteForever": "Usuń trwale",
+  "editor.deleteForeverNote": "Usuń notatkę trwale",
+  "editor.deleteForeverConfirm": "Trwale usunąć tę notatkę? Tego nie da się cofnąć.",
   "editor.folder": "Folder",
   "editor.checklist": "Lista zadań",
   "editor.table": "Tabela",
@@ -311,6 +325,8 @@ const pl: Record<TranslationKey, string> = {
   "editor.markIncomplete": "Oznacz jako nieukończone",
   "editor.addColumn": "Dodaj kolumnę",
   "editor.addRow": "Dodaj wiersz",
+  "editor.deleteRow": "Usuń wiersz",
+  "editor.deleteRowLabel": "Usuń wiersz {number}",
   "editor.column": "Kolumna {number}",
   "editor.empty": "Puste",
   "editor.nothingToPreview": "Nie ma jeszcze nic do podglądu.",

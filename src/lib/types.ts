@@ -29,8 +29,10 @@ export type NoteSummaryDto = {
   folderId: string | null;
   title: string;
   pinned: boolean;
+  sortOrder: number;
   alertAt: string | null;
   calendarAt: string | null;
+  deletedAt: string | null;
   excerpt: string | null;
   checklistTotal: number;
   checklistCompleted: number;
