@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Download,
   FileText,
   Folder,
   FolderPlus,
@@ -109,6 +110,7 @@ export function Sidebar({
   const [newFolderName, setNewFolderName] = useState("");
   const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [exportingNotes, setExportingNotes] = useState(false);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [dragOverNote, setDragOverNote] = useState<NoteDragTarget | null>(null);
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(
@@ -163,6 +165,36 @@ export function Sidebar({
   async function deleteFolder(folderId: string) {
     if (window.confirm(t("sidebar.deleteFolderConfirm"))) {
       await onDeleteFolder(folderId);
+    }
+  }
+
+  async function exportNotes() {
+    if (exportingNotes) {
+      return;
+    }
+
+    setExportingNotes(true);
+
+    try {
+      const response = await fetch("/api/export/notes");
+
+      if (!response.ok) {
+        throw new Error(t("settings.exportError"));
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = downloadFilename(response.headers.get("content-disposition"));
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : t("settings.exportError"));
+    } finally {
+      setExportingNotes(false);
     }
   }
 
@@ -461,6 +493,18 @@ export function Sidebar({
               />
             </SettingsRow>
 
+            <SettingsRow label={t("settings.export")}>
+              <button
+                className="muted-button w-full justify-start"
+                type="button"
+                disabled={exportingNotes}
+                onClick={() => void exportNotes()}
+              >
+                <Download className="h-4 w-4" />
+                {exportingNotes ? t("settings.exporting") : t("settings.exportNotes")}
+              </button>
+            </SettingsRow>
+
             <div className="mt-3 border-t border-black/[0.08] pt-3 dark:border-white/[0.09]">
               <button
                 className="muted-button w-full justify-start text-rose-600 dark:text-rose-300"
@@ -630,6 +674,28 @@ export function Sidebar({
       )}
     </aside>
   );
+}
+
+function downloadFilename(contentDisposition: string | null) {
+  if (contentDisposition) {
+    const encodedFilename = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+
+    if (encodedFilename) {
+      try {
+        return decodeURIComponent(encodedFilename);
+      } catch {
+        return encodedFilename;
+      }
+    }
+
+    const quotedFilename = contentDisposition.match(/filename="([^"]+)"/i)?.[1];
+
+    if (quotedFilename) {
+      return quotedFilename;
+    }
+  }
+
+  return `notka-notes-${new Date().toISOString().slice(0, 10)}.zip`;
 }
 
 type FolderNode = FolderDto & {

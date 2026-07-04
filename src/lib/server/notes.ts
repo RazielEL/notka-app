@@ -116,6 +116,58 @@ export async function listCalendarNotes(ownerUserId: string, includeGroupInput?:
   return rows.map(noteToSummaryDto);
 }
 
+export type ExportableNote = {
+  id: string;
+  scope: NoteScope;
+  folderPath: string[];
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function listNotesForExport(ownerUserId: string): Promise<ExportableNote[]> {
+  const [noteRows, folderRows] = await Promise.all([
+    getDb()
+      .select()
+      .from(notes)
+      .where(
+        and(
+          or(
+            and(eq(notes.scope, "personal"), eq(notes.ownerUserId, ownerUserId)),
+            eq(notes.scope, "group"),
+          ),
+          isNull(notes.deletedAt),
+          eq(notes.archived, 0),
+        ),
+      )
+      .orderBy(asc(notes.scope), asc(notes.sortOrder), desc(notes.updatedAt)),
+    getDb()
+      .select()
+      .from(folders)
+      .where(
+        or(
+          and(eq(folders.scope, "personal"), eq(folders.ownerUserId, ownerUserId)),
+          eq(folders.scope, "group"),
+        ),
+      )
+      .orderBy(asc(folders.sortOrder), asc(folders.name)),
+  ]);
+  const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
+
+  return Promise.all(
+    noteRows.map(async (note): Promise<ExportableNote> => ({
+      id: note.id,
+      scope: normalizeScope(note.scope),
+      folderPath: note.folderId ? getFolderPathSegments(foldersById, note.folderId) : [],
+      title: note.title,
+      content: await withNoteMutationLock(note.id, () => readMarkdownFile(note.filePath)),
+      createdAt: note.createdAt,
+      updatedAt: note.updatedAt,
+    })),
+  );
+}
+
 export async function createNote(ownerUserId: string, input: {
   folderId?: unknown;
   templateId?: unknown;
@@ -483,6 +535,23 @@ function noteDeletedConditions(filter: NoteDeletedFilter) {
   }
 
   return [isNull(notes.deletedAt)];
+}
+
+function getFolderPathSegments(
+  foldersById: Map<string, typeof folders.$inferSelect>,
+  folderId: string,
+) {
+  const segments: string[] = [];
+  const seen = new Set<string>();
+  let current = foldersById.get(folderId);
+
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id);
+    segments.unshift(current.name);
+    current = current.parentFolderId ? foldersById.get(current.parentFolderId) : undefined;
+  }
+
+  return segments;
 }
 
 function folderBelongsToScope(

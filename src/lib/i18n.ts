@@ -51,6 +51,10 @@ const en = {
   "settings.light": "Light",
   "settings.left": "Left",
   "settings.right": "Right",
+  "settings.export": "Export",
+  "settings.exportNotes": "Export notes .zip",
+  "settings.exporting": "Preparing...",
+  "settings.exportError": "Could not export notes.",
   "settings.open": "Open settings",
   "settings.signOut": "Sign out",
 
@@ -234,6 +238,10 @@ const pl: Record<TranslationKey, string> = {
   "settings.light": "Jasny",
   "settings.left": "Lewy",
   "settings.right": "Prawy",
+  "settings.export": "Eksport",
+  "settings.exportNotes": "Eksportuj notatki .zip",
+  "settings.exporting": "Przygotowywanie...",
+  "settings.exportError": "Nie udało się wyeksportować notatek.",
   "settings.open": "Otwórz ustawienia",
   "settings.signOut": "Wyloguj",
 
