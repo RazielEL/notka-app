@@ -45,12 +45,15 @@ export function apiError(error: unknown, status = 400) {
   const rawMessage = error instanceof Error ? error.message : "Something went wrong.";
   const configurationError = /SESSION_SECRET/i.test(rawMessage);
   const internalDatabaseError = /SQLITE_|database|constraint failed|foreign key/i.test(rawMessage);
+  const conflictError = /changed on the server|reload before saving|conflict/i.test(rawMessage);
   const resolvedStatus =
     configurationError || internalDatabaseError
       ? 500
       : /not found/i.test(rawMessage)
         ? 404
-        : status;
+        : conflictError
+          ? 409
+          : status;
   const message =
     process.env.NODE_ENV === "production" && (configurationError || resolvedStatus >= 500)
       ? configurationError

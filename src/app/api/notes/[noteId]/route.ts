@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { apiError, readJson, requireApiUser } from "@/lib/server/api";
-import { deleteNote, getNoteDetail, hardDeleteNote, updateNote } from "@/lib/server/notes";
+import { deleteNote, getNoteDetail, hardDeleteNote, restoreNote, updateNote } from "@/lib/server/notes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,6 +47,12 @@ export async function PATCH(request: Request, { params }: RouteContext) {
         ? rawBody
         : {};
     const url = new URL(request.url);
+
+    if (body.restore === true) {
+      const note = await restoreNote(user.id, params.noteId, body.scope ?? url.searchParams.get("scope"));
+      return NextResponse.json({ note });
+    }
+
     const update: Parameters<typeof updateNote>[2] = {};
 
     if ("title" in body) {
@@ -55,6 +61,10 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 
     if ("content" in body) {
       update.content = body.content;
+    }
+
+    if ("contentHash" in body) {
+      update.expectedContentHash = body.contentHash;
     }
 
     if ("folderId" in body) {

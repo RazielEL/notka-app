@@ -260,6 +260,7 @@ export async function getNoteDetail(
 export async function updateNote(ownerUserId: string, noteIdInput: unknown, input: {
   title?: unknown;
   content?: unknown;
+  expectedContentHash?: unknown;
   folderId?: unknown;
   pinned?: unknown;
   sortOrder?: unknown;
@@ -275,6 +276,7 @@ export async function updateNote(ownerUserId: string, noteIdInput: unknown, inpu
 async function updateNoteLocked(ownerUserId: string, noteId: string, input: {
   title?: unknown;
   content?: unknown;
+  expectedContentHash?: unknown;
   folderId?: unknown;
   pinned?: unknown;
   sortOrder?: unknown;
@@ -319,6 +321,14 @@ async function updateNoteLocked(ownerUserId: string, noteId: string, input: {
   }
 
   if (typeof input.content === "string") {
+    if (
+      typeof input.expectedContentHash === "string" &&
+      input.expectedContentHash.length > 0 &&
+      input.expectedContentHash !== note.contentHash
+    ) {
+      throw new Error("Note changed on the server. Reload before saving.");
+    }
+
     content = normalizeContent(input.content);
     previousContent = await readMarkdownFile(note.filePath);
     const metadata = extractMarkdownMetadata(content);
@@ -373,6 +383,12 @@ export async function hardDeleteNote(ownerUserId: string, noteIdInput: unknown, 
   return withNoteMutationLock(noteId, async () => hardDeleteNoteLocked(ownerUserId, noteId, scopeInput));
 }
 
+export async function restoreNote(ownerUserId: string, noteIdInput: unknown, scopeInput?: unknown) {
+  const noteId = assertSafeId(noteIdInput, "note id");
+
+  return withNoteMutationLock(noteId, async () => restoreNoteLocked(ownerUserId, noteId, scopeInput));
+}
+
 async function deleteNoteLocked(ownerUserId: string, noteId: string, scopeInput?: unknown) {
   const scope = normalizeScope(scopeInput);
   const note = await getNoteForUser(ownerUserId, noteId, scope);
@@ -423,6 +439,40 @@ async function hardDeleteNoteLocked(ownerUserId: string, noteId: string, scopeIn
   await removeMarkdownFile(note.filePath);
 
   return { deletedId: note.id, hardDeleted: true };
+}
+
+async function restoreNoteLocked(ownerUserId: string, noteId: string, scopeInput?: unknown) {
+  const scope = normalizeScope(scopeInput);
+  const note = await getNoteForUser(ownerUserId, noteId, scope, "trash");
+  const restoredPath = scope === "group" ? groupNoteRelativePath(note.id) : noteRelativePath(ownerUserId, note.id);
+  const now = new Date().toISOString();
+  const movedFromTrash = await moveMarkdownFile(note.filePath, restoredPath);
+
+  try {
+    const result = getDb()
+      .update(notes)
+      .set({
+        filePath: restoredPath,
+        deletedAt: null,
+        updatedAt: now,
+        updatedByUserId: ownerUserId,
+      })
+      .where(and(eq(notes.id, note.id), ...noteScopeConditions(ownerUserId, scope), isNotNull(notes.deletedAt)))
+      .run();
+
+    if (result.changes === 0) {
+      throw new Error("Note was changed before it could be restored.");
+    }
+
+    const restored = await getNoteForUser(ownerUserId, note.id, scope);
+    return noteToDetailDto(restored, await readMarkdownFile(restored.filePath));
+  } catch (error) {
+    if (movedFromTrash) {
+      await moveMarkdownFile(restoredPath, note.filePath).catch(() => undefined);
+    }
+
+    throw error;
+  }
 }
 
 export async function getNoteContentForTemplate(
