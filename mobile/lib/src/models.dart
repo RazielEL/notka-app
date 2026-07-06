@@ -95,6 +95,27 @@ class FolderDto {
       updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
     );
   }
+
+  FolderDto copyWith({
+    String? parentFolderId,
+    bool clearParentFolderId = false,
+    String? name,
+    int? sortOrder,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return FolderDto(
+      id: id,
+      scope: scope,
+      parentFolderId: clearParentFolderId
+          ? null
+          : parentFolderId ?? this.parentFolderId,
+      name: name ?? this.name,
+      sortOrder: sortOrder ?? this.sortOrder,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
 }
 
 class NoteSummaryDto {
@@ -146,6 +167,43 @@ class NoteSummaryDto {
       checklistCompleted: json['checklistCompleted'] as int? ?? 0,
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
       updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
+    );
+  }
+
+  NoteSummaryDto copyWith({
+    String? folderId,
+    bool clearFolderId = false,
+    String? title,
+    bool? pinned,
+    int? sortOrder,
+    DateTime? alertAt,
+    bool clearAlertAt = false,
+    DateTime? calendarAt,
+    bool clearCalendarAt = false,
+    DateTime? deletedAt,
+    bool clearDeletedAt = false,
+    String? excerpt,
+    bool clearExcerpt = false,
+    int? checklistTotal,
+    int? checklistCompleted,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return NoteSummaryDto(
+      id: id,
+      scope: scope,
+      folderId: clearFolderId ? null : folderId ?? this.folderId,
+      title: title ?? this.title,
+      pinned: pinned ?? this.pinned,
+      sortOrder: sortOrder ?? this.sortOrder,
+      alertAt: clearAlertAt ? null : alertAt ?? this.alertAt,
+      calendarAt: clearCalendarAt ? null : calendarAt ?? this.calendarAt,
+      deletedAt: clearDeletedAt ? null : deletedAt ?? this.deletedAt,
+      excerpt: clearExcerpt ? null : excerpt ?? this.excerpt,
+      checklistTotal: checklistTotal ?? this.checklistTotal,
+      checklistCompleted: checklistCompleted ?? this.checklistCompleted,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 }

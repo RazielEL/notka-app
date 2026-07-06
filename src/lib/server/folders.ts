@@ -124,6 +124,7 @@ export async function updateFolder(
   input: {
     name?: unknown;
     parentFolderId?: unknown;
+    sortOrder?: unknown;
     scope?: unknown;
   },
 ) {
@@ -167,6 +168,10 @@ export async function updateFolder(
 
       updates.sortOrder = (orderRow?.value ?? 0) + 10;
     }
+  }
+
+  if (input.sortOrder !== undefined) {
+    updates.sortOrder = normalizeSortOrder(input.sortOrder);
   }
 
   await getDb()
@@ -276,6 +281,14 @@ function folderParentFilter(ownerUserId: string, scope: NoteScope, parentFolderI
   return parentFolderId
     ? and(...folderScopeConditions(ownerUserId, scope), eq(folders.parentFolderId, parentFolderId))
     : and(...folderScopeConditions(ownerUserId, scope), isNull(folders.parentFolderId));
+}
+
+function normalizeSortOrder(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error("Sort order must be a number.");
+  }
+
+  return Math.max(0, Math.trunc(value));
 }
 
 async function listRawFolders(ownerUserId: string, scope: NoteScope) {
