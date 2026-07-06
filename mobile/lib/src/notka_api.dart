@@ -217,6 +217,7 @@ class NotkaApiClient {
     FolderDto folder, {
     String? name,
     Object? parentFolderId = _unset,
+    int? sortOrder,
   }) async {
     final body = await _sendJson(
       'PATCH',
@@ -226,6 +227,7 @@ class NotkaApiClient {
         'name': ?name,
         if (!identical(parentFolderId, _unset))
           'parentFolderId': parentFolderId,
+        'sortOrder': ?sortOrder,
       },
     );
     return FolderDto.fromJson(_asObject(_asObject(body)['folder']));
@@ -266,6 +268,18 @@ class NotkaApiClient {
       body: {'folderId': folderId, 'scope': note.scope.toJson()},
     );
     return NoteDetailDto.fromJson(_asObject(_asObject(body)['note']));
+  }
+
+  Future<NoteSummaryDto> setNoteSortOrder(
+    NoteSummaryDto note, {
+    required int sortOrder,
+  }) async {
+    final body = await _sendJson(
+      'PATCH',
+      '/api/notes/${note.id}',
+      body: {'sortOrder': sortOrder, 'scope': note.scope.toJson()},
+    );
+    return NoteSummaryDto.fromJson(_asObject(_asObject(body)['note']));
   }
 
   Future<NoteDetailDto> setNotePinned(

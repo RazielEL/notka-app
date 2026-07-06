@@ -8,7 +8,7 @@ enum AppPhase { booting, needsServer, needsSetup, needsLogin, signedIn }
 
 enum SaveResult { saved, conflict, failed }
 
-enum WorkspaceView { notes, schedule, trash }
+enum WorkspaceView { notes, trash }
 
 class NotkaAppState extends ChangeNotifier {
   NotkaAppState({ServerConfigStore? configStore, SessionStore? sessionStore})
@@ -68,28 +68,6 @@ class NotkaAppState extends ChangeNotifier {
               (note.excerpt ?? '').toLowerCase().contains(query);
         })
         .toList(growable: false);
-  }
-
-  List<NoteSummaryDto> get scheduledNotes {
-    final query = searchQuery.trim().toLowerCase();
-    final filtered = notes
-        .where((note) {
-          final hasSchedule = note.alertAt != null || note.calendarAt != null;
-          final matchesQuery =
-              query.isEmpty ||
-              note.title.toLowerCase().contains(query) ||
-              (note.excerpt ?? '').toLowerCase().contains(query);
-          return hasSchedule && matchesQuery;
-        })
-        .toList(growable: false);
-
-    filtered.sort((a, b) {
-      final aDate = _firstScheduleDate(a);
-      final bDate = _firstScheduleDate(b);
-      return aDate.compareTo(bDate);
-    });
-
-    return filtered;
   }
 
   List<NoteSummaryDto> get visibleTrashNotes {
@@ -243,11 +221,15 @@ class NotkaAppState extends ChangeNotifier {
 
   Future<void> loadWorkspace() async {
     final api = _requireApi();
-    folders = await api.listFolders(scope: activeScope);
-    notes = await api.listNotes(scope: activeScope);
+    folders = _sortFolders(await api.listFolders(scope: activeScope));
+    notes = _sortNotes(await api.listNotes(scope: activeScope));
     trashNotes = await api.listTrashNotes(scope: activeScope);
     templates = await api.listTemplates();
     notifyListeners();
+  }
+
+  Future<void> refreshWorkspace({bool showBusy = true}) async {
+    await _run(loadWorkspace, showBusy: showBusy);
   }
 
   Future<void> switchScope(NoteScope scope) async {
@@ -332,20 +314,14 @@ class NotkaAppState extends ChangeNotifier {
     }, showBusy: false);
   }
 
-  Future<void> createFolder(String name) async {
+  Future<void> createFolder(String name, {String? parentFolderId}) async {
     await _run(() async {
       final folder = await _requireApi().createFolder(
         name: name,
-        parentFolderId: selectedFolderId,
+        parentFolderId: parentFolderId ?? selectedFolderId,
         scope: activeScope,
       );
-      folders = [...folders, folder]
-        ..sort((a, b) {
-          final orderComparison = a.sortOrder.compareTo(b.sortOrder);
-          return orderComparison == 0
-              ? a.name.compareTo(b.name)
-              : orderComparison;
-        });
+      folders = _sortFolders([...folders, folder]);
       selectedFolderId = folder.id;
     });
   }
@@ -358,34 +334,84 @@ class NotkaAppState extends ChangeNotifier {
 
     await _run(() async {
       final updated = await _requireApi().updateFolder(folder, name: name);
-      folders =
-          folders
-              .map((entry) => entry.id == updated.id ? updated : entry)
-              .toList(growable: false)
-            ..sort((a, b) {
-              final orderComparison = a.sortOrder.compareTo(b.sortOrder);
-              return orderComparison == 0
-                  ? a.name.compareTo(b.name)
-                  : orderComparison;
-            });
+      folders = _sortFolders(
+        folders
+            .map((entry) => entry.id == updated.id ? updated : entry)
+            .toList(growable: false),
+      );
     });
   }
 
-  Future<void> moveSelectedFolderToRoot() async {
+  Future<void> moveFolder(FolderDto folder, String? parentFolderId) async {
+    await _run(() async {
+      final updated = await _requireApi().updateFolder(
+        folder,
+        parentFolderId: parentFolderId,
+      );
+      folders = _sortFolders(
+        folders
+            .map((entry) => entry.id == updated.id ? updated : entry)
+            .toList(growable: false),
+      );
+      selectedFolderId = updated.id;
+    });
+  }
+
+  Future<void> moveSelectedFolder(String? parentFolderId) async {
     final folder = selectedFolder;
     if (folder == null) {
       return;
     }
 
-    await _run(() async {
-      final updated = await _requireApi().updateFolder(
-        folder,
-        parentFolderId: null,
-      );
-      folders = folders
-          .map((entry) => entry.id == updated.id ? updated : entry)
-          .toList(growable: false);
-    });
+    await moveFolder(folder, parentFolderId);
+  }
+
+  Future<void> reorderSiblingFolders(
+    String? parentFolderId,
+    List<FolderDto> orderedFolders,
+  ) async {
+    if (orderedFolders.isEmpty) {
+      return;
+    }
+
+    if (orderedFolders.any(
+      (folder) => folder.parentFolderId != parentFolderId,
+    )) {
+      return;
+    }
+
+    final originalFolders = folders;
+    final updatedById = <String, FolderDto>{};
+
+    for (var index = 0; index < orderedFolders.length; index++) {
+      final folder = orderedFolders[index];
+      updatedById[folder.id] = folder.copyWith(sortOrder: (index + 1) * 10);
+    }
+
+    folders = _sortFolders(
+      folders
+          .map((folder) => updatedById[folder.id] ?? folder)
+          .toList(growable: false),
+    );
+    errorMessage = null;
+    notifyListeners();
+
+    try {
+      final api = _requireApi();
+      for (final folder in updatedById.values) {
+        await api.updateFolder(folder, sortOrder: folder.sortOrder);
+      }
+      folders = _sortFolders(await api.listFolders(scope: activeScope));
+    } on ApiException catch (error) {
+      folders = originalFolders;
+      errorMessage = error.message;
+    } catch (_) {
+      folders = originalFolders;
+      errorMessage =
+          'Something went wrong. Check your server address and connection.';
+    } finally {
+      notifyListeners();
+    }
   }
 
   Future<void> deleteSelectedFolder() async {
@@ -442,10 +468,12 @@ class NotkaAppState extends ChangeNotifier {
         content: content,
         title: title,
       );
-      selectedNote = updated;
-      selectedNoteIsTrash = false;
-      selectedNoteConflict = false;
       _upsertNote(updated);
+      if (selectedNote?.id == note.id) {
+        selectedNote = updated;
+        selectedNoteIsTrash = false;
+        selectedNoteConflict = false;
+      }
       notifyListeners();
       return SaveResult.saved;
     } on ApiException catch (error) {
@@ -490,6 +518,47 @@ class NotkaAppState extends ChangeNotifier {
     });
   }
 
+  Future<void> reorderVisibleNotes(List<NoteSummaryDto> orderedNotes) async {
+    final folderId = selectedFolderId;
+    if (searchQuery.trim().isNotEmpty) {
+      return;
+    }
+
+    final originalNotes = notes;
+    final updatedById = <String, NoteSummaryDto>{};
+
+    for (var index = 0; index < orderedNotes.length; index++) {
+      final note = orderedNotes[index];
+      if (note.folderId != folderId) {
+        return;
+      }
+      updatedById[note.id] = note.copyWith(sortOrder: (index + 1) * 10);
+    }
+
+    notes = _sortNotes(
+      notes.map((note) => updatedById[note.id] ?? note).toList(growable: false),
+    );
+    errorMessage = null;
+    notifyListeners();
+
+    try {
+      final api = _requireApi();
+      for (final note in updatedById.values) {
+        await api.setNoteSortOrder(note, sortOrder: note.sortOrder);
+      }
+      notes = _sortNotes(await api.listNotes(scope: activeScope));
+    } on ApiException catch (error) {
+      notes = originalNotes;
+      errorMessage = error.message;
+    } catch (_) {
+      notes = originalNotes;
+      errorMessage =
+          'Something went wrong. Check your server address and connection.';
+    } finally {
+      notifyListeners();
+    }
+  }
+
   Future<void> toggleSelectedNotePin() async {
     final note = selectedNote;
     if (note == null) {
@@ -500,38 +569,6 @@ class NotkaAppState extends ChangeNotifier {
       final updated = await _requireApi().setNotePinned(
         note,
         pinned: !note.pinned,
-      );
-      selectedNote = updated;
-      _upsertNote(updated);
-    }, showBusy: false);
-  }
-
-  Future<void> setSelectedNoteAlert(DateTime? value) async {
-    final note = selectedNote;
-    if (note == null) {
-      return;
-    }
-
-    await _run(() async {
-      final updated = await _requireApi().updateNoteSchedule(
-        note,
-        alertAt: value?.toUtc().toIso8601String(),
-      );
-      selectedNote = updated;
-      _upsertNote(updated);
-    }, showBusy: false);
-  }
-
-  Future<void> setSelectedNoteCalendar(DateTime? value) async {
-    final note = selectedNote;
-    if (note == null) {
-      return;
-    }
-
-    await _run(() async {
-      final updated = await _requireApi().updateNoteSchedule(
-        note,
-        calendarAt: value?.toUtc().toIso8601String(),
       );
       selectedNote = updated;
       _upsertNote(updated);
@@ -628,16 +665,7 @@ class NotkaAppState extends ChangeNotifier {
       next[index] = summary;
     }
 
-    next.sort((a, b) {
-      if (a.pinned != b.pinned) {
-        return a.pinned ? -1 : 1;
-      }
-
-      final aDate = a.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-      final bDate = b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-      return bDate.compareTo(aDate);
-    });
-    notes = next;
+    notes = _sortNotes(next);
   }
 
   NotkaApiClient _requireApi() {
@@ -673,11 +701,33 @@ class NotkaAppState extends ChangeNotifier {
   }
 }
 
-DateTime _firstScheduleDate(NoteSummaryDto note) {
-  final dates = [
-    if (note.alertAt != null) note.alertAt!,
-    if (note.calendarAt != null) note.calendarAt!,
-  ]..sort();
+List<FolderDto> _sortFolders(List<FolderDto> folders) {
+  return folders..sort((a, b) {
+    final parentComparison = (a.parentFolderId ?? '').compareTo(
+      b.parentFolderId ?? '',
+    );
+    if (parentComparison != 0) {
+      return parentComparison;
+    }
 
-  return dates.isEmpty ? DateTime.fromMillisecondsSinceEpoch(0) : dates.first;
+    final orderComparison = a.sortOrder.compareTo(b.sortOrder);
+    return orderComparison == 0 ? a.name.compareTo(b.name) : orderComparison;
+  });
+}
+
+List<NoteSummaryDto> _sortNotes(List<NoteSummaryDto> notes) {
+  return notes..sort((a, b) {
+    if (a.pinned != b.pinned) {
+      return a.pinned ? -1 : 1;
+    }
+
+    final orderComparison = a.sortOrder.compareTo(b.sortOrder);
+    if (orderComparison != 0) {
+      return orderComparison;
+    }
+
+    final aDate = a.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final bDate = b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+    return bDate.compareTo(aDate);
+  });
 }

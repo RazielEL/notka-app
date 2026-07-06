@@ -29,6 +29,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     const folder = await updateFolder(user.id, params.folderId, {
       name: "name" in body ? body.name : undefined,
       parentFolderId: "parentFolderId" in body ? body.parentFolderId : undefined,
+      sortOrder: "sortOrder" in body ? body.sortOrder : undefined,
       scope: "scope" in body ? body.scope : url.searchParams.get("scope"),
     });
 
