@@ -27,3 +27,7 @@ npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 *.log
+
+# mobile local/generated files
+mobile/android/build/
+mobile/android/app/google-services.json

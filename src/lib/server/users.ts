@@ -151,6 +151,93 @@ export async function authenticateUser(emailInput: unknown, passwordInput: unkno
   };
 }
 
+export async function getHiddenNotesSettings(userId: string) {
+  const rows = await getDb()
+    .select({ hiddenPinHash: users.hiddenPinHash })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  return {
+    hasPin: Boolean(rows[0]?.hiddenPinHash),
+  };
+}
+
+export async function setHiddenNotesPin(userId: string, pinInput: unknown, passwordInput: unknown) {
+  if (typeof passwordInput !== "string" || !passwordInput) {
+    throw new Error("Confirm your account password.");
+  }
+
+  const rows = await getDb()
+    .select({ passwordHash: users.passwordHash })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  const user = rows[0];
+
+  if (!user || !(await verifyPassword(passwordInput, user.passwordHash))) {
+    throw new Error("Invalid password.");
+  }
+
+  if (pinInput === null || pinInput === "") {
+    await getDb()
+      .update(users)
+      .set({ hiddenPinHash: null, updatedAt: new Date().toISOString() })
+      .where(eq(users.id, userId));
+    return getHiddenNotesSettings(userId);
+  }
+
+  if (!validateHiddenPin(pinInput)) {
+    throw new Error("PIN must be 4 to 12 digits.");
+  }
+
+  await getDb()
+    .update(users)
+    .set({
+      hiddenPinHash: await hashPassword(pinInput),
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(users.id, userId));
+
+  return getHiddenNotesSettings(userId);
+}
+
+export async function verifyHiddenNotesAccess(userId: string, input: {
+  pin?: unknown;
+  password?: unknown;
+}) {
+  const rows = await getDb()
+    .select({
+      hiddenPinHash: users.hiddenPinHash,
+      passwordHash: users.passwordHash,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  const user = rows[0];
+
+  if (!user) {
+    return false;
+  }
+
+  if (
+    typeof input.pin === "string" &&
+    user.hiddenPinHash &&
+    await verifyPassword(input.pin, user.hiddenPinHash)
+  ) {
+    return true;
+  }
+
+  if (
+    typeof input.password === "string" &&
+    await verifyPassword(input.password, user.passwordHash)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 export async function listUsers(): Promise<AppUserDto[]> {
   const rows = await getDb()
     .select({
@@ -170,4 +257,8 @@ function isSqliteConstraintError(error: unknown) {
     ("code" in error || "message" in error) &&
     /constraint|unique/i.test(error.message)
   );
+}
+
+function validateHiddenPin(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4,12}$/.test(value);
 }

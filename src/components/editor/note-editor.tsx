@@ -12,12 +12,14 @@ import {
   Eye,
   FilePlus2,
   FolderInput,
+  Lock,
   Pin,
   PinOff,
   Plus,
   Save,
   Table2,
   Trash2,
+  Unlock,
   WandSparkles,
 } from "lucide-react";
 import {
@@ -63,6 +65,10 @@ type NoteEditorProps = {
   onCreateFromTemplate: (templateId: string) => void;
   onDirtyChange?: (dirty: boolean) => void;
   isTrash?: boolean;
+  isHidden?: boolean;
+  canHide?: boolean;
+  onHide?: (noteId: string) => void;
+  onUnhide?: (noteId: string) => void;
 };
 
 export function NoteEditor({
@@ -76,6 +82,10 @@ export function NoteEditor({
   onCreateFromTemplate,
   onDirtyChange,
   isTrash = false,
+  isHidden = false,
+  canHide = false,
+  onHide,
+  onUnhide,
 }: NoteEditorProps) {
   const { language, t } = useI18n();
   const [title, setTitle] = useState(note.title);
@@ -118,6 +128,20 @@ export function NoteEditor({
 
     return countChecklist(content);
   }, [content, structuredNote]);
+
+  const noteApiUrl = useCallback((extra?: Record<string, string>) => {
+    const params = new URLSearchParams({ scope });
+
+    if (isHidden) {
+      params.set("hidden", "true");
+    }
+
+    for (const [key, value] of Object.entries(extra ?? {})) {
+      params.set(key, value);
+    }
+
+    return `/api/notes/${note.id}?${params.toString()}`;
+  }, [isHidden, note.id, scope]);
 
   useEffect(() => {
     if (window.matchMedia("(max-width: 767px)").matches) {
@@ -164,7 +188,7 @@ export function NoteEditor({
     const savedContent = content;
     setStatus("saving");
 
-    const response = await fetch(`/api/notes/${note.id}`, {
+    const response = await fetch(noteApiUrl(), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -202,7 +226,7 @@ export function NoteEditor({
       setDirty(true);
       setStatus("unsaved");
     }
-  }, [content, isTrash, note.id, onSaved, scope, status, title, titleDirty]);
+  }, [content, isTrash, note.id, noteApiUrl, onSaved, scope, status, title, titleDirty]);
 
   useEffect(() => {
     onDirtyChange?.(dirty || status === "saving");
@@ -303,7 +327,7 @@ export function NoteEditor({
   }
 
   async function togglePin() {
-    const response = await fetch(`/api/notes/${note.id}`, {
+    const response = await fetch(noteApiUrl(), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pinned: !note.pinned, scope }),
@@ -327,7 +351,7 @@ export function NoteEditor({
     }
 
     setAlertSaving(true);
-    const response = await fetch(`/api/notes/${note.id}`, {
+    const response = await fetch(noteApiUrl(), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ alertAt: deadline.toISOString(), scope }),
@@ -343,7 +367,7 @@ export function NoteEditor({
 
   async function deleteAlert() {
     setAlertSaving(true);
-    const response = await fetch(`/api/notes/${note.id}`, {
+    const response = await fetch(noteApiUrl(), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ alertAt: null, scope }),
@@ -370,7 +394,7 @@ export function NoteEditor({
     }
 
     setCalendarSaving(true);
-    const response = await fetch(`/api/notes/${note.id}`, {
+    const response = await fetch(noteApiUrl(), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ calendarAt: calendarDate.toISOString(), scope }),
@@ -386,7 +410,7 @@ export function NoteEditor({
 
   async function deleteCalendarEntry() {
     setCalendarSaving(true);
-    const response = await fetch(`/api/notes/${note.id}`, {
+    const response = await fetch(noteApiUrl(), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ calendarAt: null, scope }),
@@ -406,14 +430,37 @@ export function NoteEditor({
       return;
     }
 
-    const response = await fetch(
-      `/api/notes/${note.id}?scope=${scope}${isTrash ? "&hard=true" : ""}`,
-      { method: "DELETE" },
-    );
+    const response = await fetch(noteApiUrl(isTrash ? { hard: "true" } : undefined), {
+      method: "DELETE",
+    });
 
     if (response.ok) {
       onDeleted(note.id);
     }
+  }
+
+  async function hideCurrentNote() {
+    if (!onHide || !window.confirm(t("editor.hideConfirm"))) {
+      return;
+    }
+
+    if (dirty || titleDirty) {
+      await saveNote(true);
+    }
+
+    onHide(note.id);
+  }
+
+  async function unhideCurrentNote() {
+    if (!onUnhide || !window.confirm(t("editor.unhideConfirm"))) {
+      return;
+    }
+
+    if (dirty || titleDirty) {
+      await saveNote(true);
+    }
+
+    onUnhide(note.id);
   }
 
   function handleShortcut(event: KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) {
@@ -495,6 +542,27 @@ export function NoteEditor({
               >
                 {note.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
               </Button>
+              {isHidden ? (
+                <Button
+                  type="button"
+                  variant="icon"
+                  title={t("editor.unhide")}
+                  aria-label={t("editor.unhideNote")}
+                  onClick={() => void unhideCurrentNote()}
+                >
+                  <Unlock className="h-4 w-4" />
+                </Button>
+              ) : canHide ? (
+                <Button
+                  type="button"
+                  variant="icon"
+                  title={t("editor.hide")}
+                  aria-label={t("editor.hideNote")}
+                  onClick={() => void hideCurrentNote()}
+                >
+                  <Lock className="h-4 w-4" />
+                </Button>
+              ) : null}
             </>
           ) : null}
           <Button
