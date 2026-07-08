@@ -2,7 +2,9 @@
 
 import {
   AlertTriangle,
+  CalendarClock,
   CalendarDays,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -10,10 +12,14 @@ import {
   PanelLeftOpen,
   Pin,
   Plus,
+  Repeat,
+  Save,
+  Trash2,
   Users,
+  X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/components/i18n-provider";
@@ -30,6 +36,9 @@ import {
   type UserPreferences,
 } from "@/lib/preferences";
 import type {
+  AlertNoteEditMode,
+  AlertNoteOccurrenceDto,
+  AlertNoteRecurrence,
   AppUserDto,
   AuthUser,
   FolderDto,
@@ -40,8 +49,30 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type AppArea = "personal" | "group" | "calendar";
+type AppArea = "personal" | "group" | "calendar" | "alertNotes";
 type DropPosition = "before" | "after";
+type AlertNoteMutationInput = {
+  text: string;
+  scheduledAt: string;
+  timezone: string;
+  recurrence: AlertNoteRecurrence;
+  recurrenceEndAt: string | null;
+};
+type AlertNoteUpdateInput = AlertNoteMutationInput & {
+  occurrenceAt: string;
+  mode: AlertNoteEditMode;
+};
+type AlertNoteDeleteInput = {
+  occurrenceAt: string;
+  mode: AlertNoteEditMode;
+};
+type AlertNoteFormState = {
+  text: string;
+  scheduledAt: string;
+  recurrence: AlertNoteRecurrence;
+  recurrenceEndAt: string;
+  mode: AlertNoteEditMode;
+};
 
 type SidebarSwipeGesture = {
   pointerId: number;
@@ -89,6 +120,8 @@ export function NotkaApp({
   const [templates, setTemplates] = useState(initialTemplates);
   const [groupUsers, setGroupUsers] = useState<AppUserDto[]>([]);
   const [calendarNotes, setCalendarNotes] = useState<NoteSummaryDto[]>([]);
+  const [alertNotes, setAlertNotes] = useState<AlertNoteOccurrenceDto[]>([]);
+  const [calendarAlertNotes, setCalendarAlertNotes] = useState<AlertNoteOccurrenceDto[]>([]);
   const [calendarMonth, setCalendarMonth] = useState(() => startOfMonth(new Date()));
   const [showGroupCalendarNotes, setShowGroupCalendarNotes] = useState(false);
   const [activeArea, setActiveArea] = useState<AppArea>("personal");
@@ -146,15 +179,41 @@ export function NotkaApp({
   }, [currentScope]);
 
   const refreshCalendarNotes = useCallback(async () => {
-    const response = await fetch(
-      showGroupCalendarNotes ? "/api/calendar?includeGroup=true" : "/api/calendar",
-    );
+    const days = buildCalendarDays(calendarMonth);
+    const params = new URLSearchParams({
+      from: startOfDay(days[0]).toISOString(),
+      to: endOfDay(days[days.length - 1]).toISOString(),
+    });
+
+    if (showGroupCalendarNotes) {
+      params.set("includeGroup", "true");
+    }
+
+    const response = await fetch(`/api/calendar?${params.toString()}`);
 
     if (response.ok) {
       const body = await response.json();
       setCalendarNotes(body.notes as NoteSummaryDto[]);
+      setCalendarAlertNotes((body.alertNotes ?? []) as AlertNoteOccurrenceDto[]);
     }
-  }, [showGroupCalendarNotes]);
+  }, [calendarMonth, showGroupCalendarNotes]);
+
+  const refreshAlertNotes = useCallback(async () => {
+    const now = new Date();
+    const from = addDays(startOfDay(now), -7);
+    const to = new Date(now.getFullYear(), now.getMonth() + 3, now.getDate(), 23, 59, 59, 999);
+    const params = new URLSearchParams({
+      from: from.toISOString(),
+      to: to.toISOString(),
+      limit: "80",
+    });
+    const response = await fetch(`/api/alert-notes?${params.toString()}`);
+
+    if (response.ok) {
+      const body = await response.json();
+      setAlertNotes((body.alertNotes ?? []) as AlertNoteOccurrenceDto[]);
+    }
+  }, []);
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 767px)");
@@ -176,7 +235,7 @@ export function NotkaApp({
   useEffect(() => {
     const storedArea = localStorage.getItem("notka-area");
 
-    if (storedArea === "group" || storedArea === "calendar") {
+    if (storedArea === "group" || storedArea === "calendar" || storedArea === "alertNotes") {
       setActiveArea(storedArea);
     }
 
@@ -195,6 +254,14 @@ export function NotkaApp({
 
     void refreshFoldersAndNotes(currentScope);
   }, [activeArea, areaReady, currentScope, refreshCalendarNotes, refreshFoldersAndNotes]);
+
+  useEffect(() => {
+    if (!areaReady) {
+      return;
+    }
+
+    void refreshAlertNotes();
+  }, [areaReady, activeArea, refreshAlertNotes]);
 
   useEffect(() => {
     if (!areaReady || activeArea !== "group") {
@@ -312,36 +379,43 @@ export function NotkaApp({
       calendarNotes.filter((note) => note.scope === "personal" || showGroupCalendarNotes),
     [calendarNotes, showGroupCalendarNotes],
   );
+  const visibleCalendarAlertNotes = calendarAlertNotes;
 
   function selectFolder(folderId: string) {
     noteRequestIdRef.current += 1;
+    setActiveArea(currentScope === "group" ? "group" : "personal");
     setSelectedTrash(false);
     setSelectedFolderId(folderId);
     setSelectedNote(null);
     setLoadingNoteId(null);
     setEditorHasUnsavedChanges(false);
     localStorage.setItem(folderStorageKey(currentScope), folderId);
+    localStorage.setItem("notka-area", currentScope === "group" ? "group" : "personal");
     closeSidebarOnMobile();
   }
 
   function selectAllNotes() {
     noteRequestIdRef.current += 1;
+    setActiveArea(currentScope === "group" ? "group" : "personal");
     setSelectedTrash(false);
     setSelectedFolderId(null);
     setSelectedNote(null);
     setLoadingNoteId(null);
     setEditorHasUnsavedChanges(false);
     localStorage.setItem(folderStorageKey(currentScope), "all");
+    localStorage.setItem("notka-area", currentScope === "group" ? "group" : "personal");
     closeSidebarOnMobile();
   }
 
   function selectTrash() {
     noteRequestIdRef.current += 1;
+    setActiveArea(currentScope === "group" ? "group" : "personal");
     setSelectedTrash(true);
     setSelectedFolderId(null);
     setSelectedNote(null);
     setLoadingNoteId(null);
     setEditorHasUnsavedChanges(false);
+    localStorage.setItem("notka-area", currentScope === "group" ? "group" : "personal");
     closeSidebarOnMobile();
   }
 
@@ -369,6 +443,8 @@ export function NotkaApp({
     if (response.ok) {
       setSelectedNote(body.note as NoteDetailDto);
       setSelectedTrash(trash);
+      setActiveArea(scope === "group" ? "group" : "personal");
+      localStorage.setItem("notka-area", scope === "group" ? "group" : "personal");
       closeSidebarOnMobile();
     }
   }
@@ -415,6 +491,69 @@ export function NotkaApp({
       upsertNote(note);
       setSelectedNote(note);
       closeSidebarOnMobile();
+    }
+  }
+
+  async function createAlertNote(input: AlertNoteMutationInput) {
+    const response = await fetch("/api/alert-notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const message = typeof body.error === "string" ? body.error : "Could not save alert note.";
+      window.alert(message);
+      throw new Error(message);
+    }
+
+    await refreshAlertNotes();
+
+    if (activeArea === "calendar") {
+      await refreshCalendarNotes();
+    }
+  }
+
+  async function updateAlertNote(alertNoteId: string, input: AlertNoteUpdateInput) {
+    const response = await fetch(`/api/alert-notes/${alertNoteId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const message = typeof body.error === "string" ? body.error : "Could not save alert note.";
+      window.alert(message);
+      throw new Error(message);
+    }
+
+    await refreshAlertNotes();
+
+    if (activeArea === "calendar") {
+      await refreshCalendarNotes();
+    }
+  }
+
+  async function deleteAlertNote(alertNoteId: string, input: AlertNoteDeleteInput) {
+    const response = await fetch(`/api/alert-notes/${alertNoteId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const message = typeof body.error === "string" ? body.error : "Could not delete alert note.";
+      window.alert(message);
+      throw new Error(message);
+    }
+
+    await refreshAlertNotes();
+
+    if (activeArea === "calendar") {
+      await refreshCalendarNotes();
     }
   }
 
@@ -659,6 +798,17 @@ export function NotkaApp({
       return;
     }
 
+    if (nextArea === "alertNotes") {
+      setActiveArea(nextArea);
+      noteRequestIdRef.current += 1;
+      setSelectedNote(null);
+      setSelectedTrash(false);
+      setLoadingNoteId(null);
+      setEditorHasUnsavedChanges(false);
+      localStorage.setItem("notka-area", nextArea);
+      return;
+    }
+
     setActiveArea(nextArea);
     listRequestIdRef.current += 1;
     noteRequestIdRef.current += 1;
@@ -789,6 +939,7 @@ export function NotkaApp({
           activeArea={activeArea}
           folders={folders}
           alertShortcutNote={alertShortcutNote}
+          alertNotes={alertNotes}
           pinnedNotes={filtered.pinnedNotes}
           trashNotes={filtered.trashNotes}
           selectedFolderId={selectedTrash ? null : selectedFolderId}
@@ -823,11 +974,19 @@ export function NotkaApp({
       {activeArea === "calendar" ? (
         <CalendarView
           notes={visibleCalendarNotes}
+          alertNotes={visibleCalendarAlertNotes}
           month={calendarMonth}
           showGroupNotes={showGroupCalendarNotes}
           onMonthChange={setCalendarMonth}
           onShowGroupNotesChange={setShowGroupCalendarNotes}
           onSelectNote={(note) => void selectCalendarNote(note)}
+        />
+      ) : activeArea === "alertNotes" ? (
+        <AlertNotesView
+          alertNotes={alertNotes}
+          onCreateAlertNote={createAlertNote}
+          onUpdateAlertNote={updateAlertNote}
+          onDeleteAlertNote={deleteAlertNote}
         />
       ) : selectedNote ? (
         <NoteEditor
@@ -996,8 +1155,392 @@ function FolderOverview({
   );
 }
 
+function AlertNotesView({
+  alertNotes,
+  onCreateAlertNote,
+  onUpdateAlertNote,
+  onDeleteAlertNote,
+}: {
+  alertNotes: AlertNoteOccurrenceDto[];
+  onCreateAlertNote: (input: AlertNoteMutationInput) => Promise<void>;
+  onUpdateAlertNote: (alertNoteId: string, input: AlertNoteUpdateInput) => Promise<void>;
+  onDeleteAlertNote: (alertNoteId: string, input: AlertNoteDeleteInput) => Promise<void>;
+}) {
+  const { language, t } = useI18n();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<AlertNoteFormState>(() => newAlertNoteFormState());
+  const [saving, setSaving] = useState(false);
+  const editingAlertNote = alertNotes.find((alertNote) => alertNote.id === editingId) ?? null;
+
+  function beginCreate() {
+    setEditingId(null);
+    setForm(newAlertNoteFormState());
+  }
+
+  function beginEdit(alertNote: AlertNoteOccurrenceDto) {
+    setEditingId(alertNote.id);
+    setForm(alertNoteFormStateFromOccurrence(alertNote));
+  }
+
+  async function submitAlertNote(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const payload = alertNotePayloadFromForm(form);
+
+    if (!payload) {
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      if (editingAlertNote) {
+        await onUpdateAlertNote(editingAlertNote.alertNoteId, {
+          ...payload,
+          occurrenceAt: editingAlertNote.occurrenceAt,
+          mode: editingAlertNote.recurring ? form.mode : "all",
+        });
+      } else {
+        await onCreateAlertNote(payload);
+      }
+
+      beginCreate();
+    } catch {
+      return;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteCurrentAlertNote() {
+    if (!editingAlertNote || !window.confirm(t("alertNotes.deleteConfirm"))) {
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      await onDeleteAlertNote(editingAlertNote.alertNoteId, {
+        occurrenceAt: editingAlertNote.occurrenceAt,
+        mode: editingAlertNote.recurring ? form.mode : "all",
+      });
+      beginCreate();
+    } catch {
+      return;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="glass-panel flex min-h-[calc(100dvh-1rem)] flex-col rounded-2xl p-3 sm:p-5">
+      <header className="flex flex-col gap-3 border-b border-black/[0.06] pb-4 dark:border-white/[0.08] sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="mb-1 text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
+            Notka
+          </div>
+          <h1 className="flex min-w-0 items-center gap-3 text-2xl font-semibold text-slate-950 dark:text-white">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-teal-500/15 bg-teal-500/10 text-teal-700 dark:text-teal-300">
+              <CheckSquare className="h-5 w-5" />
+            </span>
+            <span className="truncate">{t("alertNotes.title")}</span>
+          </h1>
+        </div>
+        <Button type="button" variant="primary" onClick={beginCreate}>
+          <Plus className="h-4 w-4" />
+          {t("alertNotes.new")}
+        </Button>
+      </header>
+
+      <div className="grid min-h-0 flex-1 gap-4 pt-4 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
+        <div className="min-w-0 overflow-hidden rounded-2xl border border-black/[0.08] bg-white/35 shadow-sm shadow-slate-950/[0.03] dark:border-white/[0.08] dark:bg-white/[0.035] dark:shadow-black/10">
+          <div className="flex items-center justify-between gap-3 border-b border-black/[0.06] px-4 py-3 dark:border-white/[0.08]">
+            <h2 className="text-sm font-semibold uppercase text-slate-400 dark:text-slate-500">
+              {t("alertNotes.entries")}
+            </h2>
+            <span className="notka-badge">{alertNotes.length}</span>
+          </div>
+          {alertNotes.length > 0 ? (
+            <div className="max-h-[calc(100dvh-13rem)] overflow-y-auto p-2">
+              {alertNotes.map((alertNote) => (
+                <button
+                  key={alertNote.id}
+                  className={cn(
+                    "group mb-2 flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition hover:-translate-y-px focus:outline-none focus:ring-4 focus:ring-teal-500/10",
+                    editingId === alertNote.id
+                      ? "border-teal-400/35 bg-teal-500/[0.12] shadow-sm shadow-teal-500/10 dark:bg-teal-500/[0.1]"
+                      : "border-black/[0.06] bg-white/30 hover:border-teal-500/20 hover:bg-white/50 dark:border-white/[0.07] dark:bg-white/[0.035] dark:hover:bg-white/[0.065]",
+                  )}
+                  type="button"
+                  onClick={() => beginEdit(alertNote)}
+                >
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300">
+                    <CheckSquare className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-slate-950 dark:text-white">
+                      {alertNote.text}
+                    </span>
+                    <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                      <span className="inline-flex items-center gap-1">
+                        <CalendarClock className="h-3.5 w-3.5" />
+                        {formatEntryDate(new Date(alertNote.scheduledAt), language)}
+                      </span>
+                      {alertNote.recurring ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Repeat className="h-3.5 w-3.5" />
+                          {recurrenceLabel(alertNote.recurrence, t)}
+                        </span>
+                      ) : null}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex min-h-[18rem] flex-col items-center justify-center px-5 py-10 text-center">
+              <div className="mb-4 rounded-2xl border border-teal-500/10 bg-teal-500/10 p-4 text-teal-700 dark:text-teal-300">
+                <CheckSquare className="h-8 w-8" />
+              </div>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {t("alertNotes.noAlertNotes")}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <aside className="min-w-0 overflow-hidden rounded-2xl border border-black/[0.08] bg-white/35 p-3 shadow-sm shadow-slate-950/[0.03] dark:border-white/[0.08] dark:bg-white/[0.035] dark:shadow-black/10">
+          <div className="mb-3 flex items-center justify-between gap-2 px-1">
+            <h2 className="truncate text-sm font-semibold uppercase text-slate-400 dark:text-slate-500">
+              {editingAlertNote ? t("alertNotes.editPanel") : t("alertNotes.new")}
+            </h2>
+            {editingAlertNote ? (
+              <button
+                className="icon-button h-8 w-8"
+                type="button"
+                title={t("alertNotes.cancel")}
+                aria-label={t("alertNotes.cancel")}
+                onClick={beginCreate}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
+          <form className="grid gap-3" onSubmit={submitAlertNote}>
+            <label className="grid min-w-0 gap-1.5">
+              <span className="px-1 text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
+                {t("alertNotes.text")}
+              </span>
+              <input
+                className="notka-input"
+                value={form.text}
+                maxLength={280}
+                onChange={(event) => setForm((current) => ({ ...current, text: event.target.value }))}
+                placeholder={t("alertNotes.textPlaceholder")}
+              />
+            </label>
+            <label className="grid min-w-0 gap-1.5">
+              <span className="px-1 text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
+                {t("alertNotes.dateTime")}
+              </span>
+              <input
+                className="notka-input"
+                type="datetime-local"
+                value={form.scheduledAt}
+                onChange={(event) => setForm((current) => ({ ...current, scheduledAt: event.target.value }))}
+              />
+            </label>
+            <div className="grid min-w-0 gap-3">
+              <label className="grid min-w-0 gap-1.5">
+                <span className="px-1 text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
+                  {t("alertNotes.recurrence")}
+                </span>
+                <select
+                  className="notka-input h-10 py-0"
+                  value={form.recurrence}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      recurrence: event.target.value as AlertNoteRecurrence,
+                    }))
+                  }
+                >
+                  <option className="bg-white text-slate-900 dark:bg-navy-900 dark:text-slate-100" value="none">
+                    {t("alertNotes.recurrenceNone")}
+                  </option>
+                  <option className="bg-white text-slate-900 dark:bg-navy-900 dark:text-slate-100" value="daily">
+                    {t("alertNotes.recurrenceDaily")}
+                  </option>
+                  <option className="bg-white text-slate-900 dark:bg-navy-900 dark:text-slate-100" value="weekly">
+                    {t("alertNotes.recurrenceWeekly")}
+                  </option>
+                  <option className="bg-white text-slate-900 dark:bg-navy-900 dark:text-slate-100" value="monthly">
+                    {t("alertNotes.recurrenceMonthly")}
+                  </option>
+                  <option className="bg-white text-slate-900 dark:bg-navy-900 dark:text-slate-100" value="yearly">
+                    {t("alertNotes.recurrenceYearly")}
+                  </option>
+                </select>
+              </label>
+              <label className="grid min-w-0 gap-1.5">
+                <span className="px-1 text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
+                  {t("alertNotes.ends")}
+                </span>
+                <input
+                  className="notka-input"
+                  type="datetime-local"
+                  disabled={form.recurrence === "none"}
+                  value={form.recurrence === "none" ? "" : form.recurrenceEndAt}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, recurrenceEndAt: event.target.value }))
+                  }
+                />
+              </label>
+            </div>
+            {editingAlertNote?.recurring ? (
+              <label className="grid min-w-0 gap-1.5">
+                <span className="px-1 text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
+                  {t("alertNotes.editScope")}
+                </span>
+                <select
+                  className="notka-input h-10 py-0"
+                  value={form.mode}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      mode: event.target.value as AlertNoteEditMode,
+                    }))
+                  }
+                >
+                  <option className="bg-white text-slate-900 dark:bg-navy-900 dark:text-slate-100" value="current">
+                    {t("alertNotes.thisOccurrence")}
+                  </option>
+                  <option className="bg-white text-slate-900 dark:bg-navy-900 dark:text-slate-100" value="future">
+                    {t("alertNotes.futureOccurrences")}
+                  </option>
+                  <option className="bg-white text-slate-900 dark:bg-navy-900 dark:text-slate-100" value="all">
+                    {t("alertNotes.allOccurrences")}
+                  </option>
+                </select>
+              </label>
+            ) : null}
+            <div className="grid min-w-0 gap-2 pt-1">
+              <Button type="submit" variant="primary" className="w-full" disabled={saving}>
+                <Save className="h-4 w-4" />
+                {saving ? t("alertNotes.saving") : t("alertNotes.save")}
+              </Button>
+              {editingAlertNote ? (
+                <Button
+                  type="button"
+                  className="w-full text-rose-600 dark:text-rose-300"
+                  disabled={saving}
+                  onClick={() => void deleteCurrentAlertNote()}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {t("alertNotes.delete")}
+                </Button>
+              ) : null}
+            </div>
+          </form>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function newAlertNoteFormState(): AlertNoteFormState {
+  const next = new Date();
+  next.setHours(next.getHours() + 1, 0, 0, 0);
+
+  return {
+    text: "",
+    scheduledAt: toDatetimeLocalValue(next.toISOString()),
+    recurrence: "none",
+    recurrenceEndAt: "",
+    mode: "current",
+  };
+}
+
+function alertNoteFormStateFromOccurrence(alertNote: AlertNoteOccurrenceDto): AlertNoteFormState {
+  return {
+    text: alertNote.text,
+    scheduledAt: toDatetimeLocalValue(alertNote.scheduledAt),
+    recurrence: alertNote.recurrence,
+    recurrenceEndAt: alertNote.recurrenceEndAt ? toDatetimeLocalValue(alertNote.recurrenceEndAt) : "",
+    mode: "current",
+  };
+}
+
+function alertNotePayloadFromForm(form: AlertNoteFormState): AlertNoteMutationInput | null {
+  const scheduledAt = dateTimeLocalToIso(form.scheduledAt);
+  const recurrenceEndAt =
+    form.recurrence === "none" || !form.recurrenceEndAt
+      ? null
+      : dateTimeLocalToIso(form.recurrenceEndAt);
+
+  if (!scheduledAt || (form.recurrence !== "none" && form.recurrenceEndAt && !recurrenceEndAt)) {
+    return null;
+  }
+
+  return {
+    text: form.text,
+    scheduledAt,
+    timezone: localTimezone(),
+    recurrence: form.recurrence,
+    recurrenceEndAt,
+  };
+}
+
+function toDatetimeLocalValue(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function dateTimeLocalToIso(value: string) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function localTimezone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+function recurrenceLabel(
+  recurrence: AlertNoteRecurrence,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  if (recurrence === "daily") {
+    return t("alertNotes.recurrenceDaily");
+  }
+
+  if (recurrence === "weekly") {
+    return t("alertNotes.recurrenceWeekly");
+  }
+
+  if (recurrence === "monthly") {
+    return t("alertNotes.recurrenceMonthly");
+  }
+
+  if (recurrence === "yearly") {
+    return t("alertNotes.recurrenceYearly");
+  }
+
+  return t("alertNotes.recurrenceNone");
+}
+
 function CalendarView({
   notes,
+  alertNotes,
   month,
   showGroupNotes,
   onMonthChange,
@@ -1005,6 +1548,7 @@ function CalendarView({
   onSelectNote,
 }: {
   notes: NoteSummaryDto[];
+  alertNotes: AlertNoteOccurrenceDto[];
   month: Date;
   showGroupNotes: boolean;
   onMonthChange: (month: Date) => void;
@@ -1012,7 +1556,7 @@ function CalendarView({
   onSelectNote: (note: NoteSummaryDto) => void;
 }) {
   const { language, t } = useI18n();
-  const entries = useMemo(() => buildCalendarEntries(notes), [notes]);
+  const entries = useMemo(() => buildCalendarEntries(notes, alertNotes), [alertNotes, notes]);
   const days = useMemo(() => buildCalendarDays(month), [month]);
   const entriesByDay = useMemo(() => {
     const grouped = new Map<string, CalendarEntry[]>();
@@ -1214,14 +1758,18 @@ function CalendarView({
                     calendarToneClass(entry.tone),
                   )}
                   type="button"
-                  onClick={() => onSelectNote(entry.note)}
+                  onClick={() => {
+                    if (entry.source === "note") {
+                      onSelectNote(entry.note);
+                    }
+                  }}
                 >
                   <span className="flex items-center justify-between gap-2">
                     <span className="truncate text-sm font-semibold text-slate-900 dark:text-white">
-                      {entry.note.title}
+                      {calendarEntryTitle(entry)}
                     </span>
                     <span className="shrink-0 text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">
-                      {entry.kind === "Alert" ? t("calendar.kindAlert") : t("calendar.kindNote")}
+                      {calendarEntryKindLabel(entry, t)}
                     </span>
                   </span>
                   <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
@@ -1258,7 +1806,7 @@ function CalendarEventButton({
   onSelectNote: (note: NoteSummaryDto) => void;
 }) {
   const { language, t } = useI18n();
-  const kindLabel = entry.kind === "Alert" ? t("calendar.kindAlert") : t("calendar.kindNote");
+  const kindLabel = calendarEntryKindLabel(entry, t);
 
   return (
     <button
@@ -1267,16 +1815,22 @@ function CalendarEventButton({
         calendarToneClass(entry.tone),
       )}
       type="button"
-      title={t("calendar.eventTitle", { kind: kindLabel, title: entry.note.title })}
-      onClick={() => onSelectNote(entry.note)}
+      title={t("calendar.eventTitle", { kind: kindLabel, title: calendarEntryTitle(entry) })}
+      onClick={() => {
+        if (entry.source === "note") {
+          onSelectNote(entry.note);
+        }
+      }}
     >
-      {entry.kind === "Alert" ? (
+      {entry.source === "alertNote" ? (
+        <CheckSquare className="h-3 w-3 shrink-0" />
+      ) : entry.kind === "Alert" ? (
         <AlertTriangle className="h-3 w-3 shrink-0" />
       ) : (
         <CalendarDays className="h-3 w-3 shrink-0" />
       )}
       <span className="shrink-0 font-semibold">{formatEntryTime(entry.date, language)}</span>
-      <span className="min-w-0 truncate">{entry.note.title}</span>
+      <span className="min-w-0 truncate">{calendarEntryTitle(entry)}</span>
     </button>
   );
 }
@@ -1433,15 +1987,27 @@ function PopoverCloseButton({
 
 type CalendarTone = "green" | "yellow" | "red";
 
-type CalendarEntry = {
+type CalendarNoteEntry = {
   id: string;
+  source: "note";
   kind: "Alert" | "Note";
   note: NoteSummaryDto;
   date: Date;
   tone: CalendarTone;
 };
 
-function buildCalendarEntries(notes: NoteSummaryDto[]) {
+type CalendarAlertNoteEntry = {
+  id: string;
+  source: "alertNote";
+  kind: "AlertNote";
+  alertNote: AlertNoteOccurrenceDto;
+  date: Date;
+  tone: CalendarTone;
+};
+
+type CalendarEntry = CalendarNoteEntry | CalendarAlertNoteEntry;
+
+function buildCalendarEntries(notes: NoteSummaryDto[], alertNotes: AlertNoteOccurrenceDto[]) {
   const entries: CalendarEntry[] = [];
 
   for (const note of notes) {
@@ -1451,6 +2017,7 @@ function buildCalendarEntries(notes: NoteSummaryDto[]) {
       if (date) {
         entries.push({
           id: `${note.id}-alert`,
+          source: "note",
           kind: "Alert",
           note,
           date,
@@ -1465,6 +2032,7 @@ function buildCalendarEntries(notes: NoteSummaryDto[]) {
       if (date) {
         entries.push({
           id: `${note.id}-calendar`,
+          source: "note",
           kind: "Note",
           note,
           date,
@@ -1474,7 +2042,37 @@ function buildCalendarEntries(notes: NoteSummaryDto[]) {
     }
   }
 
+  for (const alertNote of alertNotes) {
+    const date = parseDate(alertNote.scheduledAt);
+
+    if (date) {
+      entries.push({
+        id: `alert-note-${alertNote.id}`,
+        source: "alertNote",
+        kind: "AlertNote",
+        alertNote,
+        date,
+        tone: "green",
+      });
+    }
+  }
+
   return entries.sort((a, b) => a.date.getTime() - b.date.getTime());
+}
+
+function calendarEntryTitle(entry: CalendarEntry) {
+  return entry.source === "note" ? entry.note.title : entry.alertNote.text;
+}
+
+function calendarEntryKindLabel(
+  entry: CalendarEntry,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  if (entry.source === "alertNote") {
+    return t("calendar.kindAlertNote");
+  }
+
+  return entry.kind === "Alert" ? t("calendar.kindAlert") : t("calendar.kindNote");
 }
 
 function alertCalendarTone(alertAt: string): CalendarTone {
@@ -1515,6 +2113,12 @@ function buildCalendarDays(month: Date) {
 
 function startOfDay(value: Date) {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
+function addDays(value: Date, amount: number) {
+  const next = new Date(value);
+  next.setDate(next.getDate() + amount);
+  return next;
 }
 
 function endOfDay(value: Date) {

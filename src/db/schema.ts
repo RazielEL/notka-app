@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -121,6 +121,56 @@ export const templates = sqliteTable(
   }),
 );
 
+export const alertNotes = sqliteTable(
+  "alert_notes",
+  {
+    id: text("id").primaryKey(),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    startsAt: text("starts_at").notNull(),
+    timezone: text("timezone").notNull().default("UTC"),
+    recurrence: text("recurrence").notNull().default("none"),
+    recurrenceEndAt: text("recurrence_end_at"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({
+    ownerUserIdIdx: index("alert_notes_owner_user_id_idx").on(table.ownerUserId),
+    startsAtIdx: index("alert_notes_starts_at_idx").on(table.startsAt),
+    recurrenceIdx: index("alert_notes_recurrence_idx").on(table.recurrence),
+  }),
+);
+
+export const alertNoteOccurrenceOverrides = sqliteTable(
+  "alert_note_occurrence_overrides",
+  {
+    id: text("id").primaryKey(),
+    alertNoteId: text("alert_note_id")
+      .notNull()
+      .references(() => alertNotes.id, { onDelete: "cascade" }),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    occurrenceAt: text("occurrence_at").notNull(),
+    scheduledAt: text("scheduled_at"),
+    text: text("text"),
+    cancelled: integer("cancelled").notNull().default(0),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({
+    ownerUserIdIdx: index("alert_note_overrides_owner_user_id_idx").on(table.ownerUserId),
+    alertNoteIdIdx: index("alert_note_overrides_alert_note_id_idx").on(table.alertNoteId),
+    scheduledAtIdx: index("alert_note_overrides_scheduled_at_idx").on(table.scheduledAt),
+    occurrenceUniqueIdx: uniqueIndex("alert_note_overrides_occurrence_unique_idx").on(
+      table.alertNoteId,
+      table.occurrenceAt,
+    ),
+  }),
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Session = typeof sessions.$inferSelect;
@@ -130,3 +180,7 @@ export type Note = typeof notes.$inferSelect;
 export type NewNote = typeof notes.$inferInsert;
 export type Template = typeof templates.$inferSelect;
 export type NewTemplate = typeof templates.$inferInsert;
+export type AlertNote = typeof alertNotes.$inferSelect;
+export type NewAlertNote = typeof alertNotes.$inferInsert;
+export type AlertNoteOccurrenceOverride = typeof alertNoteOccurrenceOverrides.$inferSelect;
+export type NewAlertNoteOccurrenceOverride = typeof alertNoteOccurrenceOverrides.$inferInsert;

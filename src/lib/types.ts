@@ -12,6 +12,8 @@ export type AppUserDto = {
 };
 
 export type NoteScope = "personal" | "group";
+export type AlertNoteRecurrence = "none" | "daily" | "weekly" | "monthly" | "yearly";
+export type AlertNoteEditMode = "current" | "future" | "all";
 
 export type FolderDto = {
   id: string;
@@ -43,6 +45,20 @@ export type NoteSummaryDto = {
 export type NoteDetailDto = NoteSummaryDto & {
   content: string;
   contentHash: string;
+};
+
+export type AlertNoteOccurrenceDto = {
+  id: string;
+  alertNoteId: string;
+  occurrenceAt: string;
+  scheduledAt: string;
+  text: string;
+  timezone: string;
+  recurrence: AlertNoteRecurrence;
+  recurrenceEndAt: string | null;
+  recurring: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type TemplateDto = {

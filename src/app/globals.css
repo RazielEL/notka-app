@@ -390,8 +390,16 @@ textarea {
     border-color: var(--notka-border);
   }
 
+  .notka-sidebar-panel {
+    background: color-mix(in srgb, var(--notka-main) 94%, var(--notka-elevated));
+  }
+
+  .dark .notka-sidebar-panel {
+    background: color-mix(in srgb, var(--notka-main) 91%, var(--notka-elevated));
+  }
+
   .notka-input {
-    @apply w-full rounded-xl border border-black/[0.08] bg-white/70 px-3 py-2.5 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-teal-500/60 focus:ring-4 focus:ring-teal-500/15 dark:border-white/[0.09] dark:bg-white/[0.07] dark:text-slate-100 dark:placeholder:text-slate-500;
+    @apply min-w-0 w-full rounded-xl border border-black/[0.08] bg-white/70 px-3 py-2.5 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-teal-500/60 focus:ring-4 focus:ring-teal-500/15 dark:border-white/[0.09] dark:bg-white/[0.07] dark:text-slate-100 dark:placeholder:text-slate-500;
     background: color-mix(in srgb, var(--notka-elevated) 72%, transparent);
     border-color: var(--notka-border);
     color: var(--notka-text-primary);

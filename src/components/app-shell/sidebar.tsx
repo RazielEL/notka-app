@@ -2,6 +2,8 @@
 
 import {
   AlertTriangle,
+  CalendarClock,
+  CheckSquare,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -14,6 +16,7 @@ import {
   PanelLeftClose,
   Pin,
   Plus,
+  Repeat,
   Search,
   Settings,
   Trash2,
@@ -24,7 +27,13 @@ import { languages, useI18n } from "@/components/i18n-provider";
 import { formatAlertDeadline, getAlertTone, type AlertTone } from "@/lib/alerts";
 import { translateFolderName } from "@/lib/i18n";
 import { colorThemes, fontChoices, type UserPreferences } from "@/lib/preferences";
-import type { AuthUser, FolderDto, NoteSummaryDto } from "@/lib/types";
+import type {
+  AlertNoteOccurrenceDto,
+  AlertNoteRecurrence,
+  AuthUser,
+  FolderDto,
+  NoteSummaryDto,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const ROOT_FOLDER_ID = "__notka_root__";
@@ -35,13 +44,14 @@ type NoteDragTarget = {
   position: DropPosition;
 };
 
-type AppArea = "personal" | "group" | "calendar";
+type AppArea = "personal" | "group" | "calendar" | "alertNotes";
 
 type SidebarProps = {
   user: AuthUser;
   activeArea: AppArea;
   folders: FolderDto[];
   alertShortcutNote: NoteSummaryDto | null;
+  alertNotes: AlertNoteOccurrenceDto[];
   pinnedNotes: NoteSummaryDto[];
   notes: NoteSummaryDto[];
   trashNotes: NoteSummaryDto[];
@@ -79,6 +89,7 @@ export function Sidebar({
   activeArea,
   folders,
   alertShortcutNote,
+  alertNotes,
   pinnedNotes,
   notes,
   trashNotes,
@@ -289,7 +300,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="glass-panel flex h-full min-h-0 flex-col rounded-[1.75rem] p-4">
+    <aside className="glass-panel notka-sidebar-panel flex h-full min-h-0 flex-col rounded-[1.75rem] p-4">
       <div className="relative mb-5 flex items-center justify-between gap-3 border-b border-black/[0.06] pb-4 dark:border-white/[0.08]">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
@@ -535,6 +546,12 @@ export function Sidebar({
           </label>
 
           <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            <AlertNotesSection
+              alertNotes={alertNotes}
+              active={activeArea === "alertNotes"}
+              onOpen={() => onAreaChange("alertNotes")}
+            />
+
             <SidebarSection title={t("sidebar.pinnedNotes")}>
               {pinnedNotes.length > 0 ? (
                 pinnedNotes.map((note) => (
@@ -696,6 +713,120 @@ function downloadFilename(contentDisposition: string | null) {
   }
 
   return `notka-notes-${new Date().toISOString().slice(0, 10)}.zip`;
+}
+
+function AlertNotesSection({
+  alertNotes,
+  active,
+  onOpen,
+}: {
+  alertNotes: AlertNoteOccurrenceDto[];
+  active: boolean;
+  onOpen: () => void;
+}) {
+  const { language, t } = useI18n();
+  const visibleAlertNotes = alertNotes.slice(0, 4);
+
+  return (
+    <SidebarSection
+      title={t("alertNotes.title")}
+      action={
+        <button
+          className="icon-button h-8 w-8"
+          type="button"
+          title={t("alertNotes.new")}
+          aria-label={t("alertNotes.new")}
+          onClick={onOpen}
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      }
+    >
+      <button
+        className={cn(
+          "sidebar-item mb-2 min-w-0 border border-transparent py-2",
+          active &&
+            "sidebar-item-active border-teal-400/30 bg-teal-500/10 shadow-[0_0_20px_rgba(20,184,166,0.12)]",
+        )}
+        type="button"
+        onClick={onOpen}
+      >
+        <CheckSquare className="h-4 w-4 shrink-0 text-teal-600 dark:text-teal-300" />
+        <span className="min-w-0 flex-1 truncate">{t("alertNotes.open")}</span>
+        <span className="notka-badge px-2 py-0.5 text-[11px]">{alertNotes.length}</span>
+      </button>
+
+      {visibleAlertNotes.length > 0 ? (
+        <div className="space-y-1">
+          {visibleAlertNotes.map((alertNote) => (
+            <button
+              key={alertNote.id}
+              className="group flex w-full items-start gap-2 rounded-xl border border-black/[0.06] bg-white/20 px-2.5 py-2 text-left shadow-sm shadow-slate-950/[0.02] transition hover:border-teal-500/20 hover:bg-white/40 focus:outline-none focus:ring-2 focus:ring-teal-500/15 dark:border-white/[0.07] dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
+              type="button"
+              onClick={onOpen}
+            >
+              <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300">
+                <CheckSquare className="h-3 w-3" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                  {alertNote.text}
+                </span>
+                <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                  <CalendarClock className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{formatAlertNoteDate(alertNote.scheduledAt, language)}</span>
+                  {alertNote.recurring ? (
+                    <>
+                      <Repeat className="ml-1 h-3 w-3 shrink-0" />
+                      <span className="shrink-0">{recurrenceLabel(alertNote.recurrence, t)}</span>
+                    </>
+                  ) : null}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <EmptyLine text={t("alertNotes.noAlertNotes")} />
+      )}
+    </SidebarSection>
+  );
+}
+
+function formatAlertNoteDate(value: string, language: ReturnType<typeof useI18n>["language"]) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(language === "pl" ? "pl-PL" : "en-US", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function recurrenceLabel(
+  recurrence: AlertNoteRecurrence,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  if (recurrence === "daily") {
+    return t("alertNotes.recurrenceDaily");
+  }
+
+  if (recurrence === "weekly") {
+    return t("alertNotes.recurrenceWeekly");
+  }
+
+  if (recurrence === "monthly") {
+    return t("alertNotes.recurrenceMonthly");
+  }
+
+  if (recurrence === "yearly") {
+    return t("alertNotes.recurrenceYearly");
+  }
+
+  return t("alertNotes.recurrenceNone");
 }
 
 type FolderNode = FolderDto & {
