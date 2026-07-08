@@ -27,30 +27,52 @@ class SessionStore {
 
   Future<String?> readSessionCookie() async {
     try {
-      return await _storage.read(key: _sessionCookieKey);
+      return _persistentSessionCookie(
+        await _storage.read(key: _sessionCookieKey),
+      );
     } catch (_) {
       final preferences = await SharedPreferences.getInstance();
-      return preferences.getString(_fallbackSessionCookieKey);
+      return _persistentSessionCookie(
+        preferences.getString(_fallbackSessionCookieKey),
+      );
     }
   }
 
   Future<void> writeSessionCookie(String? value) async {
+    final persistentValue = _persistentSessionCookie(value);
+
     try {
-      if (value == null || value.isEmpty) {
+      if (persistentValue == null || persistentValue.isEmpty) {
         await _storage.delete(key: _sessionCookieKey);
         return;
       }
 
-      await _storage.write(key: _sessionCookieKey, value: value);
+      await _storage.write(key: _sessionCookieKey, value: persistentValue);
     } catch (_) {
       final preferences = await SharedPreferences.getInstance();
 
-      if (value == null || value.isEmpty) {
+      if (persistentValue == null || persistentValue.isEmpty) {
         await preferences.remove(_fallbackSessionCookieKey);
         return;
       }
 
-      await preferences.setString(_fallbackSessionCookieKey, value);
+      await preferences.setString(_fallbackSessionCookieKey, persistentValue);
     }
+  }
+
+  String? _persistentSessionCookie(String? value) {
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+
+    final cookies = <String>[];
+    for (final entry in value.split(';')) {
+      final trimmed = entry.trim();
+      if (trimmed.startsWith('notka_session=')) {
+        cookies.add(trimmed);
+      }
+    }
+
+    return cookies.isEmpty ? null : cookies.join('; ');
   }
 }

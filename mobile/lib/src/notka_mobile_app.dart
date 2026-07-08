@@ -315,53 +315,62 @@ class WorkspaceScreen extends StatelessWidget {
     final visibleNotes = appState.visibleNotes;
     final scheduledNotes = appState.scheduledNotes;
     final trashNotes = appState.visibleTrashNotes;
+    final hiddenNotes = appState.visibleHiddenNotes;
+    final hiddenActive = appState.activeView == WorkspaceView.hidden;
 
     if (note != null) {
       return NoteEditorScreen(
         appState: appState,
         note: note,
         isTrash: appState.selectedNoteIsTrash,
+        isHidden: appState.selectedNoteIsHidden,
       );
     }
 
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          appState.activeScope == NoteScope.personal ? 'Personal' : 'Group',
+          hiddenActive
+              ? 'Hidden Notes'
+              : appState.activeScope == NoteScope.personal
+              ? 'Personal'
+              : 'Group',
         ),
         actions: [
-          PopupMenuButton<String>(
-            tooltip: 'Templates',
-            icon: const Icon(Icons.file_copy_outlined),
-            onSelected: (templateId) {
-              final template = appState.templates.firstWhere(
-                (entry) => entry.id == templateId,
-              );
-              unawaited(appState.createNoteFromTemplate(template));
-            },
-            itemBuilder: (context) => [
-              for (final template in appState.templates)
-                PopupMenuItem(
-                  value: template.id,
-                  child: Row(
-                    children: [
-                      Icon(
-                        template.builtIn
-                            ? Icons.auto_awesome
-                            : Icons.description_outlined,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(child: Text(_templateName(template))),
-                    ],
+          if (!hiddenActive || appState.hiddenUnlocked)
+            PopupMenuButton<String>(
+              tooltip: 'Templates',
+              icon: const Icon(Icons.file_copy_outlined),
+              onSelected: (templateId) {
+                final template = appState.templates.firstWhere(
+                  (entry) => entry.id == templateId,
+                );
+                unawaited(appState.createNoteFromTemplate(template));
+              },
+              itemBuilder: (context) => [
+                for (final template in appState.templates)
+                  PopupMenuItem(
+                    value: template.id,
+                    child: Row(
+                      children: [
+                        Icon(
+                          template.builtIn
+                              ? Icons.auto_awesome
+                              : Icons.description_outlined,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(child: Text(_templateName(template))),
+                      ],
+                    ),
                   ),
-                ),
-            ],
-          ),
-          IconButton(
-            tooltip: 'New folder',
-            onPressed: () => _createFolder(context),
-            icon: const Icon(Icons.create_new_folder_outlined),
-          ),
+              ],
+            ),
+          if (appState.activeView == WorkspaceView.notes)
+            IconButton(
+              tooltip: 'New folder',
+              onPressed: () => _createFolder(context),
+              icon: const Icon(Icons.create_new_folder_outlined),
+            ),
           IconButton(
             tooltip: 'Refresh',
             onPressed: () => unawaited(appState.loadWorkspace()),
@@ -375,24 +384,32 @@ class WorkspaceScreen extends StatelessWidget {
               if (value == 'server') {
                 unawaited(appState.changeServer());
               }
+              if (value == 'hidden-pin') {
+                unawaited(_setHiddenPin(context));
+              }
             },
             itemBuilder: (context) => const [
+              PopupMenuItem(value: 'hidden-pin', child: Text('Hidden PIN')),
               PopupMenuItem(value: 'server', child: Text('Change server')),
               PopupMenuItem(value: 'logout', child: Text('Sign out')),
             ],
           ),
         ],
       ),
-      floatingActionButton: appState.activeView == WorkspaceView.trash
+      floatingActionButton:
+          appState.activeView == WorkspaceView.trash ||
+              (hiddenActive && !appState.hiddenUnlocked)
           ? null
           : FloatingActionButton.extended(
               onPressed: () => unawaited(appState.createNote()),
               icon: const Icon(Icons.add),
-              label: const Text('New note'),
+              label: Text(hiddenActive ? 'New hidden note' : 'New note'),
             ),
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: appState.loadWorkspace,
+          onRefresh: () => hiddenActive
+              ? appState.refreshHiddenNotesStatus()
+              : appState.loadWorkspace(),
           child: ListView(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
             children: [
@@ -433,10 +450,15 @@ class WorkspaceScreen extends StatelessWidget {
                     icon: Icon(Icons.delete_outline),
                     label: Text('Trash'),
                   ),
+                  ButtonSegment(
+                    value: WorkspaceView.hidden,
+                    icon: Icon(Icons.lock_outline),
+                    label: Text('Hidden'),
+                  ),
                 ],
                 selected: {appState.activeView},
                 onSelectionChanged: (selection) {
-                  appState.setWorkspaceView(selection.first);
+                  unawaited(appState.setWorkspaceView(selection.first));
                 },
               ),
               const SizedBox(height: 12),
@@ -464,6 +486,16 @@ class WorkspaceScreen extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
+              if (hiddenActive)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+                  child: Text(
+                    appState.hiddenUnlocked
+                        ? 'Unlocked until you leave Hidden Notes'
+                        : 'PIN or account password required',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
               TextField(
                 onChanged: appState.setSearchQuery,
                 decoration: const InputDecoration(
@@ -481,7 +513,18 @@ class WorkspaceScreen extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              if (appState.activeView == WorkspaceView.schedule)
+              if (hiddenActive)
+                if (!appState.hiddenUnlocked)
+                  _HiddenLockView(appState: appState)
+                else if (hiddenNotes.isEmpty)
+                  const _EmptyNotes(message: 'No hidden notes.')
+                else
+                  for (final note in hiddenNotes)
+                    _NoteTile(
+                      note: note,
+                      onTap: () => unawaited(appState.openHiddenNote(note)),
+                    )
+              else if (appState.activeView == WorkspaceView.schedule)
                 if (scheduledNotes.isEmpty)
                   const _EmptySchedule()
                 else
@@ -502,7 +545,10 @@ class WorkspaceScreen extends StatelessWidget {
                       onTap: () => unawaited(appState.openTrashNote(note)),
                     )
               else if (visibleNotes.isEmpty)
-                const _EmptyNotes()
+                const _EmptyNotes(
+                  message:
+                      'Create your first mobile note from the button below.',
+                )
               else
                 for (final note in visibleNotes)
                   _NoteTile(
@@ -549,6 +595,74 @@ class WorkspaceScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _setHiddenPin(BuildContext context) async {
+    final pinController = TextEditingController();
+    final passwordController = TextEditingController();
+    var clearPin = false;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Hidden PIN'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: clearPin,
+                title: const Text('Clear current PIN'),
+                onChanged: (value) =>
+                    setDialogState(() => clearPin = value ?? false),
+              ),
+              if (!clearPin) ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: pinController,
+                  keyboardType: TextInputType.number,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'New PIN',
+                    hintText: '4-12 digits',
+                    prefixIcon: Icon(Icons.pin_outlined),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: passwordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Account password',
+                  prefixIcon: Icon(Icons.password_outlined),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(clearPin ? 'Clear' : 'Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final pin = pinController.text.trim();
+    final password = passwordController.text;
+    pinController.dispose();
+    passwordController.dispose();
+
+    if (result != true || password.isEmpty) {
+      return;
+    }
+
+    await appState.setHiddenPin(clearPin ? null : pin, password);
+  }
+
   static String? _folderName(List<FolderDto> folders, String? folderId) {
     if (folderId == null) {
       return null;
@@ -581,7 +695,7 @@ class _FolderFilterBar extends StatelessWidget {
               selected: appState.selectedFolderId == null,
               label: const Text('All notes'),
               avatar: const Icon(Icons.all_inbox_outlined),
-              onSelected: (_) => appState.selectFolder(null),
+              onSelected: (_) => unawaited(appState.selectFolder(null)),
             ),
           ),
           for (final folder in appState.folders)
@@ -591,7 +705,7 @@ class _FolderFilterBar extends StatelessWidget {
                 selected: appState.selectedFolderId == folder.id,
                 label: Text(folder.name),
                 avatar: const Icon(Icons.folder_outlined),
-                onSelected: (_) => appState.selectFolder(folder.id),
+                onSelected: (_) => unawaited(appState.selectFolder(folder.id)),
               ),
             ),
         ],
@@ -703,7 +817,9 @@ class _SelectedFolderActions extends StatelessWidget {
 }
 
 class _EmptyNotes extends StatelessWidget {
-  const _EmptyNotes();
+  const _EmptyNotes({required this.message});
+
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -720,13 +836,78 @@ class _EmptyNotes extends StatelessWidget {
           Text('No notes yet', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
           Text(
-            'Create your first mobile note from the button below.',
+            message,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium,
           ),
         ],
       ),
     );
+  }
+}
+
+class _HiddenLockView extends StatefulWidget {
+  const _HiddenLockView({required this.appState});
+
+  final NotkaAppState appState;
+
+  @override
+  State<_HiddenLockView> createState() => _HiddenLockViewState();
+}
+
+class _HiddenLockViewState extends State<_HiddenLockView> {
+  final controller = TextEditingController();
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final label = widget.appState.hiddenHasPin ? 'PIN or password' : 'Password';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 72, horizontal: 16),
+      child: Column(
+        children: [
+          Icon(
+            Icons.lock_outline,
+            size: 52,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(height: 12),
+          Text('Hidden Notes', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            obscureText: true,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              labelText: label,
+              prefixIcon: const Icon(Icons.password_outlined),
+            ),
+            onSubmitted: (_) => _unlock(),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _unlock,
+            icon: const Icon(Icons.lock_open_outlined),
+            label: const Text('Unlock'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _unlock() {
+    final value = controller.text;
+    if (value.isEmpty) {
+      return;
+    }
+
+    unawaited(widget.appState.unlockHiddenNotes(value));
   }
 }
 
@@ -801,15 +982,30 @@ class _NoteTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tone = _alertTone(note.alertAt);
     final schedule = _scheduleSubtitle(note);
     final subtitle = [
       if (folderName != null) folderName,
       ?schedule,
       if (note.excerpt != null && note.excerpt!.trim().isNotEmpty) note.excerpt,
     ].join('  |  ');
+    final cardColor = switch (tone) {
+      _AlertTone.red => theme.colorScheme.errorContainer.withValues(
+        alpha: 0.38,
+      ),
+      _AlertTone.yellow => Colors.amber.withValues(alpha: 0.16),
+      _AlertTone.none => null,
+    };
+    final alertColor = switch (tone) {
+      _AlertTone.red => theme.colorScheme.error,
+      _AlertTone.yellow => Colors.amber,
+      _AlertTone.none => null,
+    };
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 5),
+      color: cardColor,
       child: ListTile(
         onTap: onTap,
         leading: Icon(note.pinned ? Icons.push_pin : Icons.notes_outlined),
@@ -817,7 +1013,14 @@ class _NoteTile extends StatelessWidget {
         subtitle: subtitle.isEmpty
             ? null
             : Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
-        trailing: const Icon(Icons.chevron_right),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (tone != _AlertTone.none)
+              Icon(Icons.error_outline, color: alertColor, size: 20),
+            const Icon(Icons.chevron_right),
+          ],
+        ),
       ),
     );
   }
@@ -828,12 +1031,14 @@ class NoteEditorScreen extends StatefulWidget {
     required this.appState,
     required this.note,
     required this.isTrash,
+    required this.isHidden,
     super.key,
   });
 
   final NotkaAppState appState;
   final NoteDetailDto note;
   final bool isTrash;
+  final bool isHidden;
 
   @override
   State<NoteEditorScreen> createState() => _NoteEditorScreenState();
@@ -846,6 +1051,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   String saveStatus = 'Saved';
   bool titleDirty = false;
   _EditorMode editorMode = _EditorMode.markdown;
+
+  bool get _readOnly => widget.isTrash;
 
   @override
   void initState() {
@@ -876,6 +1083,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final readOnly = _readOnly;
     final checklist = _parseChecklist(contentController.text);
     final effectiveEditorMode =
         editorMode == _EditorMode.checklist && checklist == null
@@ -886,7 +1094,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) {
-          if (!widget.isTrash) {
+          if (!readOnly) {
             _flushSave();
           }
           widget.appState.closeNote();
@@ -897,7 +1105,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
           leading: IconButton(
             tooltip: 'Back',
             onPressed: () {
-              if (!widget.isTrash) {
+              if (!readOnly) {
                 _flushSave();
               }
               widget.appState.closeNote();
@@ -920,11 +1128,12 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                   ),
                 ]
               : [
-                  IconButton(
-                    tooltip: 'Save as template',
-                    onPressed: _createTemplate,
-                    icon: const Icon(Icons.note_add_outlined),
-                  ),
+                  if (!widget.isHidden)
+                    IconButton(
+                      tooltip: 'Save as template',
+                      onPressed: _createTemplate,
+                      icon: const Icon(Icons.note_add_outlined),
+                    ),
                   IconButton(
                     tooltip: widget.note.pinned ? 'Unpin' : 'Pin',
                     onPressed: () =>
@@ -935,22 +1144,36 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                           : Icons.push_pin_outlined,
                     ),
                   ),
-                  PopupMenuButton<String>(
-                    tooltip: 'Move to folder',
-                    icon: const Icon(Icons.folder_open_outlined),
-                    onSelected: _moveToFolder,
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: '__root__',
-                        child: Text('All notes'),
-                      ),
-                      for (final folder in widget.appState.folders)
-                        PopupMenuItem(
-                          value: folder.id,
-                          child: Text(folder.name),
+                  if (widget.isHidden)
+                    IconButton(
+                      tooltip: 'Unhide',
+                      onPressed: () =>
+                          unawaited(widget.appState.unhideSelectedNote()),
+                      icon: const Icon(Icons.lock_open_outlined),
+                    )
+                  else if (widget.note.scope == NoteScope.personal)
+                    IconButton(
+                      tooltip: 'Hide',
+                      onPressed: _hide,
+                      icon: const Icon(Icons.lock_outline),
+                    ),
+                  if (!widget.isHidden)
+                    PopupMenuButton<String>(
+                      tooltip: 'Move to folder',
+                      icon: const Icon(Icons.folder_open_outlined),
+                      onSelected: _moveToFolder,
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: '__root__',
+                          child: Text('All notes'),
                         ),
-                    ],
-                  ),
+                        for (final folder in widget.appState.folders)
+                          PopupMenuItem(
+                            value: folder.id,
+                            child: Text(folder.name),
+                          ),
+                      ],
+                    ),
                   IconButton(
                     tooltip: 'Save',
                     onPressed: _flushSave,
@@ -972,7 +1195,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                 _ConflictBanner(onReload: _reloadServerVersion),
               TextField(
                 controller: titleController,
-                enabled: !widget.isTrash,
+                readOnly: readOnly,
                 textInputAction: TextInputAction.next,
                 style: Theme.of(context).textTheme.headlineSmall,
                 decoration: const InputDecoration(
@@ -1002,6 +1225,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                 const SizedBox(height: 12),
                 _SchedulePanel(
                   note: widget.note,
+                  readOnly: readOnly,
                   onSetAlert: _setAlert,
                   onClearAlert: () =>
                       unawaited(widget.appState.setSelectedNoteAlert(null)),
@@ -1018,7 +1242,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                     ButtonSegment(
                       value: _EditorMode.markdown,
                       icon: Icon(Icons.edit_outlined),
-                      label: Text('Edit'),
+                      label: Text(readOnly ? 'Markdown' : 'Edit'),
                     ),
                     if (checklist != null)
                       ButtonSegment(
@@ -1045,13 +1269,13 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                   checklist != null)
                 _ChecklistEditor(
                   data: checklist,
-                  readOnly: widget.isTrash,
+                  readOnly: readOnly,
                   onChanged: _updateChecklist,
                 )
               else
                 TextField(
                   controller: contentController,
-                  enabled: !widget.isTrash,
+                  readOnly: readOnly,
                   minLines: 18,
                   maxLines: null,
                   keyboardType: TextInputType.multiline,
@@ -1074,7 +1298,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   }
 
   void _scheduleSave() {
-    if (widget.isTrash) {
+    if (_readOnly) {
       return;
     }
 
@@ -1098,7 +1322,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   }
 
   void _flushSave() {
-    if (widget.isTrash) {
+    if (_readOnly) {
       return;
     }
 
@@ -1212,6 +1436,58 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     }
   }
 
+  Future<void> _hide() async {
+    final unlocked = widget.appState.hiddenUnlocked
+        ? true
+        : await _showHiddenUnlockDialog();
+
+    if (!unlocked) {
+      return;
+    }
+
+    unawaited(widget.appState.hideSelectedNote());
+  }
+
+  Future<bool> _showHiddenUnlockDialog() async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Unlock Hidden Notes'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          obscureText: true,
+          textInputAction: TextInputAction.done,
+          decoration: InputDecoration(
+            labelText: widget.appState.hiddenHasPin
+                ? 'PIN or password'
+                : 'Password',
+            prefixIcon: const Icon(Icons.password_outlined),
+          ),
+          onSubmitted: (value) => Navigator.of(context).pop(value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('Unlock'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (value == null || value.isEmpty) {
+      return false;
+    }
+
+    return widget.appState.unlockHiddenNotes(value);
+  }
+
   Future<void> _createTemplate() async {
     final controller = TextEditingController(
       text:
@@ -1254,7 +1530,11 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
 
       if (!mounted || result != SaveResult.saved) {
         setState(() {
-          saveStatus = result == SaveResult.conflict ? 'Conflict' : 'Unsaved';
+          saveStatus = switch (result) {
+            SaveResult.conflict => 'Conflict',
+            SaveResult.saved => 'Saved',
+            SaveResult.failed => 'Unsaved',
+          };
         });
         return;
       }
@@ -1329,6 +1609,7 @@ class _TrashNotice extends StatelessWidget {
 class _SchedulePanel extends StatelessWidget {
   const _SchedulePanel({
     required this.note,
+    required this.readOnly,
     required this.onSetAlert,
     required this.onClearAlert,
     required this.onSetCalendar,
@@ -1336,6 +1617,7 @@ class _SchedulePanel extends StatelessWidget {
   });
 
   final NoteDetailDto note;
+  final bool readOnly;
   final VoidCallback onSetAlert;
   final VoidCallback onClearAlert;
   final VoidCallback onSetCalendar;
@@ -1355,6 +1637,7 @@ class _SchedulePanel extends StatelessWidget {
             icon: Icons.notifications_active_outlined,
             label: 'Alert',
             value: _formatDateTime(note.alertAt),
+            readOnly: readOnly,
             onSet: onSetAlert,
             onClear: note.alertAt == null ? null : onClearAlert,
           ),
@@ -1363,6 +1646,7 @@ class _SchedulePanel extends StatelessWidget {
             icon: Icons.event_outlined,
             label: 'Calendar',
             value: _formatDateTime(note.calendarAt),
+            readOnly: readOnly,
             onSet: onSetCalendar,
             onClear: note.calendarAt == null ? null : onClearCalendar,
           ),
@@ -1377,6 +1661,7 @@ class _ScheduleRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    required this.readOnly,
     required this.onSet,
     required this.onClear,
   });
@@ -1384,6 +1669,7 @@ class _ScheduleRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String? value;
+  final bool readOnly;
   final VoidCallback onSet;
   final VoidCallback? onClear;
 
@@ -1405,16 +1691,18 @@ class _ScheduleRow extends StatelessWidget {
             ],
           ),
         ),
-        IconButton(
-          tooltip: 'Set $label',
-          onPressed: onSet,
-          icon: const Icon(Icons.edit_calendar_outlined),
-        ),
-        IconButton(
-          tooltip: 'Clear $label',
-          onPressed: onClear,
-          icon: const Icon(Icons.close),
-        ),
+        if (!readOnly) ...[
+          IconButton(
+            tooltip: 'Set $label',
+            onPressed: onSet,
+            icon: const Icon(Icons.edit_calendar_outlined),
+          ),
+          IconButton(
+            tooltip: 'Clear $label',
+            onPressed: onClear,
+            icon: const Icon(Icons.close),
+          ),
+        ],
       ],
     );
   }
@@ -1456,6 +1744,28 @@ String? _scheduleSubtitle(NoteSummaryDto note) {
   ];
 
   return parts.isEmpty ? null : parts.join(' / ');
+}
+
+enum _AlertTone { none, yellow, red }
+
+_AlertTone _alertTone(DateTime? alertAt, [DateTime? now]) {
+  if (alertAt == null) {
+    return _AlertTone.none;
+  }
+
+  final daysUntilDeadline =
+      (alertAt.toLocal().difference(now ?? DateTime.now()).inMilliseconds) /
+      Duration.millisecondsPerDay;
+
+  if (daysUntilDeadline <= 1) {
+    return _AlertTone.red;
+  }
+
+  if (daysUntilDeadline <= 3) {
+    return _AlertTone.yellow;
+  }
+
+  return _AlertTone.none;
 }
 
 String? _formatDateTime(DateTime? value) {
@@ -1944,6 +2254,23 @@ class _PreviewLine extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: Text(_cleanInlineMarkdown(bulletMatch.group(1) ?? '')),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final orderedMatch = RegExp(r'^\s*(\d+)[.)]\s+(.*)$').firstMatch(trimmed);
+    if (orderedMatch != null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${orderedMatch.group(1)}.'),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(_cleanInlineMarkdown(orderedMatch.group(2) ?? '')),
             ),
           ],
         ),

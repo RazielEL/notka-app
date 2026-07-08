@@ -84,6 +84,37 @@ class NotkaApiClient {
     await onSessionCookieChanged(null);
   }
 
+  Future<HiddenNotesSettingsDto> hiddenNotesSettings() async {
+    final body = await _sendJson('GET', '/api/hidden-notes');
+    return HiddenNotesSettingsDto.fromJson(_asObject(body));
+  }
+
+  Future<HiddenNotesSettingsDto> unlockHiddenNotes(String value) async {
+    final body = await _sendJson(
+      'POST',
+      '/api/hidden-notes/unlock',
+      body: {'value': value},
+    );
+    return HiddenNotesSettingsDto.fromJson(_asObject(body));
+  }
+
+  Future<HiddenNotesSettingsDto> setHiddenNotesPin({
+    required String? pin,
+    required String password,
+  }) async {
+    final body = await _sendJson(
+      'PATCH',
+      '/api/hidden-notes',
+      body: {'pin': pin, 'password': password},
+    );
+    return HiddenNotesSettingsDto.fromJson(_asObject(body));
+  }
+
+  Future<HiddenNotesSettingsDto> lockHiddenNotes() async {
+    final body = await _sendJson('DELETE', '/api/hidden-notes');
+    return HiddenNotesSettingsDto.fromJson(_asObject(body));
+  }
+
   Future<List<FolderDto>> listFolders({
     NoteScope scope = NoteScope.personal,
   }) async {
@@ -135,6 +166,20 @@ class NotkaApiClient {
         .toList(growable: false);
   }
 
+  Future<List<NoteSummaryDto>> listHiddenNotes() async {
+    final body = await _sendJson('GET', '/api/notes?hidden=true');
+    final notes = _asObject(body)['notes'];
+
+    if (notes is! List) {
+      return const [];
+    }
+
+    return notes
+        .whereType<Map<String, Object?>>()
+        .map(NoteSummaryDto.fromJson)
+        .toList(growable: false);
+  }
+
   Future<List<TemplateDto>> listTemplates() async {
     final body = await _sendJson('GET', '/api/templates');
     final templates = _asObject(body)['templates'];
@@ -153,11 +198,13 @@ class NotkaApiClient {
     String noteId, {
     NoteScope scope = NoteScope.personal,
     bool trash = false,
+    bool hidden = false,
   }) async {
     final trashQuery = trash ? '&trash=true' : '';
+    final hiddenQuery = hidden ? '&hidden=true' : '';
     final body = await _sendJson(
       'GET',
-      '/api/notes/$noteId?scope=${scope.toJson()}$trashQuery',
+      '/api/notes/$noteId?scope=${scope.toJson()}$trashQuery$hiddenQuery',
     );
     return NoteDetailDto.fromJson(_asObject(_asObject(body)['note']));
   }
@@ -166,6 +213,7 @@ class NotkaApiClient {
     String? folderId,
     String? templateId,
     NoteScope scope = NoteScope.personal,
+    bool hidden = false,
   }) async {
     final body = await _sendJson(
       'POST',
@@ -175,6 +223,7 @@ class NotkaApiClient {
         'templateId': templateId,
         'scope': scope.toJson(),
         'language': 'en',
+        'hidden': hidden,
       },
     );
     return NoteDetailDto.fromJson(_asObject(_asObject(body)['note']));
@@ -242,6 +291,7 @@ class NotkaApiClient {
     NoteDetailDto note, {
     required String content,
     String? title,
+    bool hidden = false,
   }) async {
     final body = await _sendJson(
       'PATCH',
@@ -251,6 +301,7 @@ class NotkaApiClient {
         'contentHash': note.contentHash,
         'scope': note.scope.toJson(),
         'title': ?title,
+        if (hidden) 'hiddenContext': true,
       },
     );
     return NoteDetailDto.fromJson(_asObject(_asObject(body)['note']));
@@ -259,11 +310,16 @@ class NotkaApiClient {
   Future<NoteDetailDto> moveNoteToFolder(
     NoteDetailDto note, {
     required String? folderId,
+    bool hidden = false,
   }) async {
     final body = await _sendJson(
       'PATCH',
       '/api/notes/${note.id}',
-      body: {'folderId': folderId, 'scope': note.scope.toJson()},
+      body: {
+        'folderId': folderId,
+        'scope': note.scope.toJson(),
+        if (hidden) 'hiddenContext': true,
+      },
     );
     return NoteDetailDto.fromJson(_asObject(_asObject(body)['note']));
   }
@@ -271,11 +327,16 @@ class NotkaApiClient {
   Future<NoteDetailDto> setNotePinned(
     NoteDetailDto note, {
     required bool pinned,
+    bool hidden = false,
   }) async {
     final body = await _sendJson(
       'PATCH',
       '/api/notes/${note.id}',
-      body: {'pinned': pinned, 'scope': note.scope.toJson()},
+      body: {
+        'pinned': pinned,
+        'scope': note.scope.toJson(),
+        if (hidden) 'hiddenContext': true,
+      },
     );
     return NoteDetailDto.fromJson(_asObject(_asObject(body)['note']));
   }
@@ -284,6 +345,7 @@ class NotkaApiClient {
     NoteDetailDto note, {
     Object? alertAt = _unset,
     Object? calendarAt = _unset,
+    bool hidden = false,
   }) async {
     final body = await _sendJson(
       'PATCH',
@@ -292,15 +354,17 @@ class NotkaApiClient {
         'scope': note.scope.toJson(),
         if (!identical(alertAt, _unset)) 'alertAt': alertAt,
         if (!identical(calendarAt, _unset)) 'calendarAt': calendarAt,
+        if (hidden) 'hiddenContext': true,
       },
     );
     return NoteDetailDto.fromJson(_asObject(_asObject(body)['note']));
   }
 
-  Future<void> deleteNote(NoteDetailDto note) async {
+  Future<void> deleteNote(NoteDetailDto note, {bool hidden = false}) async {
+    final hiddenQuery = hidden ? '&hidden=true' : '';
     await _sendJson(
       'DELETE',
-      '/api/notes/${note.id}?scope=${note.scope.toJson()}',
+      '/api/notes/${note.id}?scope=${note.scope.toJson()}$hiddenQuery',
     );
   }
 
@@ -320,6 +384,24 @@ class NotkaApiClient {
     );
   }
 
+  Future<NoteDetailDto> hideNote(NoteDetailDto note) async {
+    final body = await _sendJson(
+      'PATCH',
+      '/api/notes/${note.id}/hidden',
+      body: {'hidden': true, 'scope': note.scope.toJson()},
+    );
+    return NoteDetailDto.fromJson(_asObject(_asObject(body)['note']));
+  }
+
+  Future<NoteDetailDto> unhideNote(NoteDetailDto note) async {
+    final body = await _sendJson(
+      'PATCH',
+      '/api/notes/${note.id}/hidden',
+      body: {'hidden': false, 'scope': note.scope.toJson()},
+    );
+    return NoteDetailDto.fromJson(_asObject(_asObject(body)['note']));
+  }
+
   Future<Object?> _sendJson(String method, String path, {Object? body}) async {
     final uri = Uri.parse('$baseUrl$path');
     final headers = <String, String>{
@@ -335,9 +417,12 @@ class NotkaApiClient {
         .send(request)
         .timeout(const Duration(seconds: 15));
     final response = await http.Response.fromStream(streamed);
-    final cookie = _extractSessionCookie(response.headers['set-cookie']);
+    final cookie = _mergeSetCookies(
+      sessionCookie,
+      response.headers['set-cookie'],
+    );
 
-    if (cookie != null) {
+    if (cookie != sessionCookie) {
       await onSessionCookieChanged(cookie);
     }
 
@@ -395,13 +480,51 @@ class NotkaApiClient {
     throw ApiException('Server response had an unexpected shape.');
   }
 
-  static String? _extractSessionCookie(String? header) {
+  static String? _mergeSetCookies(String? current, String? header) {
     if (header == null || header.isEmpty) {
+      return current;
+    }
+
+    final cookies = <String, String>{};
+
+    for (final entry in (current ?? '').split(';')) {
+      final index = entry.indexOf('=');
+      if (index <= 0) {
+        continue;
+      }
+
+      final name = entry.substring(0, index).trim();
+      final value = entry.substring(index + 1).trim();
+      if (name.isNotEmpty && value.isNotEmpty) {
+        cookies[name] = value;
+      }
+    }
+
+    final matches = RegExp(
+      r'(notka_session|notka_hidden_access)=([^;,\s]*)',
+    ).allMatches(header);
+
+    for (final match in matches) {
+      final name = match.group(1);
+      final value = match.group(2);
+      if (name == null || value == null) {
+        continue;
+      }
+
+      if (value.isEmpty) {
+        cookies.remove(name);
+      } else {
+        cookies[name] = value;
+      }
+    }
+
+    if (cookies.isEmpty) {
       return null;
     }
 
-    final match = RegExp(r'notka_session=[^;,\s]+').firstMatch(header);
-    return match?.group(0);
+    return cookies.entries
+        .map((entry) => '${entry.key}=${entry.value}')
+        .join('; ');
   }
 }
 

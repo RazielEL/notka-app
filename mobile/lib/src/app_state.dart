@@ -8,7 +8,7 @@ enum AppPhase { booting, needsServer, needsSetup, needsLogin, signedIn }
 
 enum SaveResult { saved, conflict, failed }
 
-enum WorkspaceView { notes, schedule, trash }
+enum WorkspaceView { notes, schedule, trash, hidden }
 
 class NotkaAppState extends ChangeNotifier {
   NotkaAppState({ServerConfigStore? configStore, SessionStore? sessionStore})
@@ -29,10 +29,14 @@ class NotkaAppState extends ChangeNotifier {
   List<FolderDto> folders = const [];
   List<NoteSummaryDto> notes = const [];
   List<NoteSummaryDto> trashNotes = const [];
+  List<NoteSummaryDto> hiddenNotes = const [];
   List<TemplateDto> templates = const [];
   NoteDetailDto? selectedNote;
   bool selectedNoteIsTrash = false;
+  bool selectedNoteIsHidden = false;
   bool selectedNoteConflict = false;
+  bool hiddenHasPin = false;
+  bool hiddenUnlocked = false;
   bool busy = false;
   String? errorMessage;
 
@@ -111,6 +115,20 @@ class NotkaAppState extends ChangeNotifier {
     return filtered;
   }
 
+  List<NoteSummaryDto> get visibleHiddenNotes {
+    final query = searchQuery.trim().toLowerCase();
+    final filtered = hiddenNotes
+        .where((note) {
+          return query.isEmpty ||
+              note.title.toLowerCase().contains(query) ||
+              (note.excerpt ?? '').toLowerCase().contains(query);
+        })
+        .toList(growable: false);
+
+    filtered.sort(_compareNotesByImportance);
+    return filtered;
+  }
+
   NotkaApiClient? get _api {
     final url = serverUrl;
     if (url == null || url.isEmpty) {
@@ -170,9 +188,13 @@ class NotkaAppState extends ChangeNotifier {
     folders = const [];
     notes = const [];
     trashNotes = const [];
+    hiddenNotes = const [];
     templates = const [];
     selectedNote = null;
     selectedNoteIsTrash = false;
+    selectedNoteIsHidden = false;
+    hiddenUnlocked = false;
+    hiddenHasPin = false;
     phase = AppPhase.needsServer;
     notifyListeners();
   }
@@ -232,11 +254,15 @@ class NotkaAppState extends ChangeNotifier {
       searchQuery = '';
       selectedNote = null;
       selectedNoteIsTrash = false;
+      selectedNoteIsHidden = false;
       selectedNoteConflict = false;
       notes = const [];
       trashNotes = const [];
+      hiddenNotes = const [];
       templates = const [];
       folders = const [];
+      hiddenUnlocked = false;
+      hiddenHasPin = false;
       phase = AppPhase.needsLogin;
     });
   }
@@ -247,6 +273,9 @@ class NotkaAppState extends ChangeNotifier {
     notes = await api.listNotes(scope: activeScope);
     trashNotes = await api.listTrashNotes(scope: activeScope);
     templates = await api.listTemplates();
+    if (hiddenUnlocked) {
+      hiddenNotes = await _requireApi().listHiddenNotes();
+    }
     notifyListeners();
   }
 
@@ -255,26 +284,53 @@ class NotkaAppState extends ChangeNotifier {
       return;
     }
 
+    if (activeView == WorkspaceView.hidden) {
+      await lockHiddenNotes(showBusy: false);
+    }
+
     activeScope = scope;
     activeView = WorkspaceView.notes;
     selectedFolderId = null;
     searchQuery = '';
     selectedNote = null;
     selectedNoteIsTrash = false;
+    selectedNoteIsHidden = false;
     selectedNoteConflict = false;
     await _run(loadWorkspace);
   }
 
-  void selectFolder(String? folderId) {
+  Future<void> selectFolder(String? folderId) async {
+    if (activeView == WorkspaceView.hidden) {
+      await lockHiddenNotes(showBusy: false);
+    }
+
     selectedFolderId = folderId;
     activeView = WorkspaceView.notes;
+    selectedNoteIsHidden = false;
     notifyListeners();
   }
 
-  void setWorkspaceView(WorkspaceView view) {
+  Future<void> setWorkspaceView(WorkspaceView view) async {
+    if (activeView == view) {
+      return;
+    }
+
+    if (activeView == WorkspaceView.hidden && view != WorkspaceView.hidden) {
+      await lockHiddenNotes(showBusy: false);
+    }
+
     activeView = view;
     if (view != WorkspaceView.notes) {
       selectedFolderId = null;
+    }
+    selectedNote = null;
+    selectedNoteIsTrash = false;
+    selectedNoteIsHidden = false;
+    selectedNoteConflict = false;
+    if (view == WorkspaceView.hidden) {
+      searchQuery = '';
+      await refreshHiddenNotesStatus();
+      return;
     }
     notifyListeners();
   }
@@ -285,28 +341,50 @@ class NotkaAppState extends ChangeNotifier {
   }
 
   Future<void> createNote() async {
+    final hidden = activeView == WorkspaceView.hidden;
+    if (hidden && !hiddenUnlocked) {
+      return;
+    }
+
     await _run(() async {
       final note = await _requireApi().createNote(
-        folderId: selectedFolderId,
-        scope: activeScope,
+        folderId: hidden ? null : selectedFolderId,
+        scope: hidden ? NoteScope.personal : activeScope,
+        hidden: hidden,
       );
-      _upsertNote(note);
+      if (hidden) {
+        _upsertHiddenNote(note);
+      } else {
+        _upsertNote(note);
+      }
       selectedNote = note;
       selectedNoteIsTrash = false;
+      selectedNoteIsHidden = hidden;
       selectedNoteConflict = false;
     });
   }
 
   Future<void> createNoteFromTemplate(TemplateDto template) async {
+    final hidden = activeView == WorkspaceView.hidden;
+    if (hidden && !hiddenUnlocked) {
+      return;
+    }
+
     await _run(() async {
       final note = await _requireApi().createNote(
-        folderId: selectedFolderId,
+        folderId: hidden ? null : selectedFolderId,
         templateId: template.id,
-        scope: activeScope,
+        scope: hidden ? NoteScope.personal : activeScope,
+        hidden: hidden,
       );
-      _upsertNote(note);
+      if (hidden) {
+        _upsertHiddenNote(note);
+      } else {
+        _upsertNote(note);
+      }
       selectedNote = note;
       selectedNoteIsTrash = false;
+      selectedNoteIsHidden = hidden;
       selectedNoteConflict = false;
     });
   }
@@ -333,6 +411,10 @@ class NotkaAppState extends ChangeNotifier {
   }
 
   Future<void> createFolder(String name) async {
+    if (activeView == WorkspaceView.hidden) {
+      return;
+    }
+
     await _run(() async {
       final folder = await _requireApi().createFolder(
         name: name,
@@ -408,6 +490,7 @@ class NotkaAppState extends ChangeNotifier {
         scope: summary.scope,
       );
       selectedNoteIsTrash = false;
+      selectedNoteIsHidden = false;
       selectedNoteConflict = false;
     });
   }
@@ -420,6 +503,24 @@ class NotkaAppState extends ChangeNotifier {
         trash: true,
       );
       selectedNoteIsTrash = true;
+      selectedNoteIsHidden = false;
+      selectedNoteConflict = false;
+    });
+  }
+
+  Future<void> openHiddenNote(NoteSummaryDto summary) async {
+    if (!hiddenUnlocked) {
+      return;
+    }
+
+    await _run(() async {
+      selectedNote = await _requireApi().getNote(
+        summary.id,
+        scope: NoteScope.personal,
+        hidden: true,
+      );
+      selectedNoteIsTrash = false;
+      selectedNoteIsHidden = true;
       selectedNoteConflict = false;
     });
   }
@@ -441,11 +542,16 @@ class NotkaAppState extends ChangeNotifier {
         note,
         content: content,
         title: title,
+        hidden: selectedNoteIsHidden,
       );
       selectedNote = updated;
       selectedNoteIsTrash = false;
       selectedNoteConflict = false;
-      _upsertNote(updated);
+      if (selectedNoteIsHidden) {
+        _upsertHiddenNote(updated);
+      } else {
+        _upsertNote(updated);
+      }
       notifyListeners();
       return SaveResult.saved;
     } on ApiException catch (error) {
@@ -468,7 +574,11 @@ class NotkaAppState extends ChangeNotifier {
     }
 
     await _run(() async {
-      selectedNote = await _requireApi().getNote(note.id, scope: note.scope);
+      selectedNote = await _requireApi().getNote(
+        note.id,
+        scope: note.scope,
+        hidden: selectedNoteIsHidden,
+      );
       selectedNoteIsTrash = false;
       selectedNoteConflict = false;
     });
@@ -476,7 +586,7 @@ class NotkaAppState extends ChangeNotifier {
 
   Future<void> moveSelectedNoteToFolder(String? folderId) async {
     final note = selectedNote;
-    if (note == null) {
+    if (note == null || selectedNoteIsHidden) {
       return;
     }
 
@@ -500,9 +610,14 @@ class NotkaAppState extends ChangeNotifier {
       final updated = await _requireApi().setNotePinned(
         note,
         pinned: !note.pinned,
+        hidden: selectedNoteIsHidden,
       );
       selectedNote = updated;
-      _upsertNote(updated);
+      if (selectedNoteIsHidden) {
+        _upsertHiddenNote(updated);
+      } else {
+        _upsertNote(updated);
+      }
     }, showBusy: false);
   }
 
@@ -516,9 +631,14 @@ class NotkaAppState extends ChangeNotifier {
       final updated = await _requireApi().updateNoteSchedule(
         note,
         alertAt: value?.toUtc().toIso8601String(),
+        hidden: selectedNoteIsHidden,
       );
       selectedNote = updated;
-      _upsertNote(updated);
+      if (selectedNoteIsHidden) {
+        _upsertHiddenNote(updated);
+      } else {
+        _upsertNote(updated);
+      }
     }, showBusy: false);
   }
 
@@ -532,9 +652,14 @@ class NotkaAppState extends ChangeNotifier {
       final updated = await _requireApi().updateNoteSchedule(
         note,
         calendarAt: value?.toUtc().toIso8601String(),
+        hidden: selectedNoteIsHidden,
       );
       selectedNote = updated;
-      _upsertNote(updated);
+      if (selectedNoteIsHidden) {
+        _upsertHiddenNote(updated);
+      } else {
+        _upsertNote(updated);
+      }
     }, showBusy: false);
   }
 
@@ -545,14 +670,22 @@ class NotkaAppState extends ChangeNotifier {
     }
 
     await _run(() async {
-      await _requireApi().deleteNote(note);
+      await _requireApi().deleteNote(note, hidden: selectedNoteIsHidden);
       selectedNote = null;
       selectedNoteIsTrash = false;
+      final wasHidden = selectedNoteIsHidden;
+      selectedNoteIsHidden = false;
       selectedNoteConflict = false;
-      notes = notes
-          .where((entry) => entry.id != note.id)
-          .toList(growable: false);
-      trashNotes = await _requireApi().listTrashNotes(scope: activeScope);
+      if (wasHidden) {
+        hiddenNotes = hiddenNotes
+            .where((entry) => entry.id != note.id)
+            .toList(growable: false);
+      } else {
+        notes = notes
+            .where((entry) => entry.id != note.id)
+            .toList(growable: false);
+        trashNotes = await _requireApi().listTrashNotes(scope: activeScope);
+      }
     });
   }
 
@@ -566,6 +699,7 @@ class NotkaAppState extends ChangeNotifier {
       final restored = await _requireApi().restoreNote(note);
       selectedNote = restored;
       selectedNoteIsTrash = false;
+      selectedNoteIsHidden = false;
       trashNotes = trashNotes
           .where((entry) => entry.id != note.id)
           .toList(growable: false);
@@ -583,15 +717,142 @@ class NotkaAppState extends ChangeNotifier {
       await _requireApi().hardDeleteNote(note);
       selectedNote = null;
       selectedNoteIsTrash = false;
+      selectedNoteIsHidden = false;
       trashNotes = trashNotes
           .where((entry) => entry.id != note.id)
           .toList(growable: false);
     });
   }
 
+  Future<void> refreshHiddenNotesStatus() async {
+    await _run(() async {
+      final settings = await _requireApi().hiddenNotesSettings();
+      hiddenHasPin = settings.hasPin;
+      hiddenUnlocked = settings.unlocked;
+      hiddenNotes = settings.unlocked
+          ? await _requireApi().listHiddenNotes()
+          : const [];
+    }, showBusy: false);
+  }
+
+  Future<bool> unlockHiddenNotes(String value) async {
+    busy = true;
+    errorMessage = null;
+    notifyListeners();
+
+    try {
+      final settings = await _requireApi().unlockHiddenNotes(value);
+      hiddenHasPin = settings.hasPin;
+      hiddenUnlocked = settings.unlocked;
+      hiddenNotes = await _requireApi().listHiddenNotes();
+      return true;
+    } on ApiException catch (error) {
+      errorMessage = error.message;
+      hiddenUnlocked = false;
+      hiddenNotes = const [];
+      return false;
+    } catch (_) {
+      errorMessage =
+          'Something went wrong. Check your connection and try again.';
+      hiddenUnlocked = false;
+      hiddenNotes = const [];
+      return false;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> setHiddenPin(String? pin, String password) async {
+    busy = true;
+    errorMessage = null;
+    notifyListeners();
+
+    try {
+      final settings = await _requireApi().setHiddenNotesPin(
+        pin: pin,
+        password: password,
+      );
+      hiddenHasPin = settings.hasPin;
+      hiddenUnlocked = settings.unlocked;
+      if (!settings.unlocked) {
+        hiddenNotes = const [];
+      }
+      return true;
+    } on ApiException catch (error) {
+      errorMessage = error.message;
+      return false;
+    } catch (_) {
+      errorMessage =
+          'Something went wrong. Check your connection and try again.';
+      return false;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> lockHiddenNotes({bool showBusy = true}) async {
+    await _run(() async {
+      hiddenUnlocked = false;
+      hiddenNotes = const [];
+      if (selectedNoteIsHidden) {
+        selectedNote = null;
+      }
+      selectedNoteIsHidden = false;
+      final settings = await _requireApi().lockHiddenNotes();
+      hiddenHasPin = settings.hasPin;
+    }, showBusy: showBusy);
+  }
+
+  Future<void> hideSelectedNote() async {
+    final note = selectedNote;
+    if (note == null || selectedNoteIsTrash || selectedNoteIsHidden) {
+      return;
+    }
+
+    await _run(() async {
+      final hidden = await _requireApi().hideNote(note);
+      notes = notes
+          .where((entry) => entry.id != note.id)
+          .toList(growable: false);
+      _upsertHiddenNote(hidden);
+      selectedNote = null;
+      selectedNoteIsTrash = false;
+      selectedNoteIsHidden = false;
+      selectedNoteConflict = false;
+    });
+  }
+
+  Future<void> unhideSelectedNote() async {
+    final note = selectedNote;
+    if (note == null || !selectedNoteIsHidden) {
+      return;
+    }
+
+    await _run(() async {
+      final restored = await _requireApi().unhideNote(note);
+      hiddenNotes = hiddenNotes
+          .where((entry) => entry.id != note.id)
+          .toList(growable: false);
+      _upsertNote(restored);
+      selectedNote = restored;
+      selectedNoteIsTrash = false;
+      selectedNoteIsHidden = false;
+      selectedNoteConflict = false;
+      activeView = WorkspaceView.notes;
+      selectedFolderId = null;
+      hiddenUnlocked = false;
+      hiddenNotes = const [];
+      final settings = await _requireApi().lockHiddenNotes();
+      hiddenHasPin = settings.hasPin;
+    });
+  }
+
   void closeNote() {
     selectedNote = null;
     selectedNoteIsTrash = false;
+    selectedNoteIsHidden = false;
     selectedNoteConflict = false;
     notifyListeners();
   }
@@ -629,15 +890,24 @@ class NotkaAppState extends ChangeNotifier {
     }
 
     next.sort((a, b) {
-      if (a.pinned != b.pinned) {
-        return a.pinned ? -1 : 1;
-      }
-
-      final aDate = a.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-      final bDate = b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-      return bDate.compareTo(aDate);
+      return _compareNotesByImportance(a, b);
     });
     notes = next;
+  }
+
+  void _upsertHiddenNote(NoteDetailDto note) {
+    final summary = note.toSummary();
+    final next = [...hiddenNotes];
+    final index = next.indexWhere((entry) => entry.id == note.id);
+
+    if (index == -1) {
+      next.insert(0, summary);
+    } else {
+      next[index] = summary;
+    }
+
+    next.sort(_compareNotesByImportance);
+    hiddenNotes = next;
   }
 
   NotkaApiClient _requireApi() {
@@ -680,4 +950,14 @@ DateTime _firstScheduleDate(NoteSummaryDto note) {
   ]..sort();
 
   return dates.isEmpty ? DateTime.fromMillisecondsSinceEpoch(0) : dates.first;
+}
+
+int _compareNotesByImportance(NoteSummaryDto a, NoteSummaryDto b) {
+  if (a.pinned != b.pinned) {
+    return a.pinned ? -1 : 1;
+  }
+
+  final aDate = a.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+  final bDate = b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+  return bDate.compareTo(aDate);
 }

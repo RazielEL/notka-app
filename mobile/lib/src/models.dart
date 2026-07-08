@@ -1,3 +1,68 @@
+String _asString(Object? value, String fallback) {
+  if (value is String) {
+    return value;
+  }
+
+  if (value == null) {
+    return fallback;
+  }
+
+  return value.toString();
+}
+
+String? _asNullableString(Object? value) {
+  if (value is String && value.isNotEmpty) {
+    return value;
+  }
+
+  return null;
+}
+
+int _asInt(Object? value, [int fallback = 0]) {
+  if (value is int) {
+    return value;
+  }
+
+  if (value is num) {
+    return value.toInt();
+  }
+
+  if (value is String) {
+    return int.tryParse(value) ?? fallback;
+  }
+
+  return fallback;
+}
+
+bool _asBool(Object? value) {
+  if (value is bool) {
+    return value;
+  }
+
+  if (value is num) {
+    return value != 0;
+  }
+
+  if (value is String) {
+    final normalized = value.trim().toLowerCase();
+    return normalized == 'true' || normalized == '1';
+  }
+
+  return false;
+}
+
+DateTime? _asDateTime(Object? value) {
+  if (value is DateTime) {
+    return value;
+  }
+
+  if (value is String && value.isNotEmpty) {
+    return DateTime.tryParse(value);
+  }
+
+  return null;
+}
+
 enum NoteScope {
   personal,
   group;
@@ -27,10 +92,10 @@ class AuthUser {
 
   factory AuthUser.fromJson(Map<String, Object?> json) {
     return AuthUser(
-      id: json['id'] as String? ?? '',
-      email: json['email'] as String? ?? '',
-      displayName: json['displayName'] as String? ?? '',
-      role: json['role'] as String? ?? 'user',
+      id: _asString(json['id'], ''),
+      email: _asString(json['email'], ''),
+      displayName: _asString(json['displayName'], ''),
+      role: _asString(json['role'], 'user'),
     );
   }
 }
@@ -54,13 +119,27 @@ class BootstrapStatus {
     final userJson = json['user'];
 
     return BootstrapStatus(
-      app: json['app'] as String? ?? 'Notka',
-      version: json['version'] as String? ?? '',
-      hasUsers: json['hasUsers'] == true,
-      serverTime: DateTime.tryParse(json['serverTime'] as String? ?? ''),
+      app: _asString(json['app'], 'Notka'),
+      version: _asString(json['version'], ''),
+      hasUsers: _asBool(json['hasUsers']),
+      serverTime: _asDateTime(json['serverTime']),
       user: userJson is Map<String, Object?>
           ? AuthUser.fromJson(userJson)
           : null,
+    );
+  }
+}
+
+class HiddenNotesSettingsDto {
+  HiddenNotesSettingsDto({required this.hasPin, required this.unlocked});
+
+  final bool hasPin;
+  final bool unlocked;
+
+  factory HiddenNotesSettingsDto.fromJson(Map<String, Object?> json) {
+    return HiddenNotesSettingsDto(
+      hasPin: _asBool(json['hasPin']),
+      unlocked: _asBool(json['unlocked']),
     );
   }
 }
@@ -86,13 +165,13 @@ class FolderDto {
 
   factory FolderDto.fromJson(Map<String, Object?> json) {
     return FolderDto(
-      id: json['id'] as String? ?? '',
+      id: _asString(json['id'], ''),
       scope: NoteScope.fromJson(json['scope']),
-      parentFolderId: json['parentFolderId'] as String?,
-      name: json['name'] as String? ?? 'Folder',
-      sortOrder: json['sortOrder'] as int? ?? 0,
-      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
-      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
+      parentFolderId: _asNullableString(json['parentFolderId']),
+      name: _asString(json['name'], 'Folder'),
+      sortOrder: _asInt(json['sortOrder']),
+      createdAt: _asDateTime(json['createdAt']),
+      updatedAt: _asDateTime(json['updatedAt']),
     );
   }
 }
@@ -132,20 +211,20 @@ class NoteSummaryDto {
 
   factory NoteSummaryDto.fromJson(Map<String, Object?> json) {
     return NoteSummaryDto(
-      id: json['id'] as String? ?? '',
+      id: _asString(json['id'], ''),
       scope: NoteScope.fromJson(json['scope']),
-      folderId: json['folderId'] as String?,
-      title: json['title'] as String? ?? 'Untitled note',
-      pinned: json['pinned'] == true,
-      sortOrder: json['sortOrder'] as int? ?? 0,
-      alertAt: DateTime.tryParse(json['alertAt'] as String? ?? ''),
-      calendarAt: DateTime.tryParse(json['calendarAt'] as String? ?? ''),
-      deletedAt: DateTime.tryParse(json['deletedAt'] as String? ?? ''),
-      excerpt: json['excerpt'] as String?,
-      checklistTotal: json['checklistTotal'] as int? ?? 0,
-      checklistCompleted: json['checklistCompleted'] as int? ?? 0,
-      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
-      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
+      folderId: _asNullableString(json['folderId']),
+      title: _asString(json['title'], 'Untitled note'),
+      pinned: _asBool(json['pinned']),
+      sortOrder: _asInt(json['sortOrder']),
+      alertAt: _asDateTime(json['alertAt']),
+      calendarAt: _asDateTime(json['calendarAt']),
+      deletedAt: _asDateTime(json['deletedAt']),
+      excerpt: _asNullableString(json['excerpt']),
+      checklistTotal: _asInt(json['checklistTotal']),
+      checklistCompleted: _asInt(json['checklistCompleted']),
+      createdAt: _asDateTime(json['createdAt']),
+      updatedAt: _asDateTime(json['updatedAt']),
     );
   }
 }
@@ -175,22 +254,22 @@ class NoteDetailDto extends NoteSummaryDto {
 
   factory NoteDetailDto.fromJson(Map<String, Object?> json) {
     return NoteDetailDto(
-      id: json['id'] as String? ?? '',
+      id: _asString(json['id'], ''),
       scope: NoteScope.fromJson(json['scope']),
-      folderId: json['folderId'] as String?,
-      title: json['title'] as String? ?? 'Untitled note',
-      pinned: json['pinned'] == true,
-      sortOrder: json['sortOrder'] as int? ?? 0,
-      alertAt: DateTime.tryParse(json['alertAt'] as String? ?? ''),
-      calendarAt: DateTime.tryParse(json['calendarAt'] as String? ?? ''),
-      deletedAt: DateTime.tryParse(json['deletedAt'] as String? ?? ''),
-      excerpt: json['excerpt'] as String?,
-      checklistTotal: json['checklistTotal'] as int? ?? 0,
-      checklistCompleted: json['checklistCompleted'] as int? ?? 0,
-      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
-      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
-      content: json['content'] as String? ?? '',
-      contentHash: json['contentHash'] as String? ?? '',
+      folderId: _asNullableString(json['folderId']),
+      title: _asString(json['title'], 'Untitled note'),
+      pinned: _asBool(json['pinned']),
+      sortOrder: _asInt(json['sortOrder']),
+      alertAt: _asDateTime(json['alertAt']),
+      calendarAt: _asDateTime(json['calendarAt']),
+      deletedAt: _asDateTime(json['deletedAt']),
+      excerpt: _asNullableString(json['excerpt']),
+      checklistTotal: _asInt(json['checklistTotal']),
+      checklistCompleted: _asInt(json['checklistCompleted']),
+      createdAt: _asDateTime(json['createdAt']),
+      updatedAt: _asDateTime(json['updatedAt']),
+      content: _asString(json['content'], ''),
+      contentHash: _asString(json['contentHash'], ''),
     );
   }
 
@@ -231,11 +310,11 @@ class TemplateDto {
 
   factory TemplateDto.fromJson(Map<String, Object?> json) {
     return TemplateDto(
-      id: json['id'] as String? ?? '',
-      name: json['name'] as String? ?? 'Template',
-      builtIn: json['builtIn'] == true,
-      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
-      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
+      id: _asString(json['id'], ''),
+      name: _asString(json['name'], 'Template'),
+      builtIn: _asBool(json['builtIn']),
+      createdAt: _asDateTime(json['createdAt']),
+      updatedAt: _asDateTime(json['updatedAt']),
     );
   }
 }
