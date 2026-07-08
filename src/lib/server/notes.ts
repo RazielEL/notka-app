@@ -93,6 +93,31 @@ export async function listTrashNotes(ownerUserId: string, searchInput?: unknown,
   return rows.map(noteToSummaryDto);
 }
 
+export async function listHiddenNotes(ownerUserId: string, searchInput?: unknown) {
+  const search = typeof searchInput === "string" ? searchInput.trim().slice(0, 120) : "";
+  const filters = [
+    eq(notes.scope, "personal"),
+    eq(notes.ownerUserId, ownerUserId),
+    isNull(notes.deletedAt),
+    eq(notes.archived, 1),
+  ];
+
+  const rows = await getDb()
+    .select()
+    .from(notes)
+    .where(
+      search
+        ? and(
+            ...filters,
+            or(like(notes.title, `%${search}%`), like(notes.excerpt, `%${search}%`)),
+          )
+        : and(...filters),
+    )
+    .orderBy(desc(notes.updatedAt));
+
+  return rows.map(noteToSummaryDto);
+}
+
 export async function listCalendarNotes(ownerUserId: string, includeGroupInput?: unknown) {
   const includeGroup = includeGroupInput === true || includeGroupInput === "true";
   const rows = await getDb()
@@ -175,11 +200,15 @@ export async function createNote(ownerUserId: string, input: {
   content?: unknown;
   scope?: unknown;
   language?: unknown;
+  hidden?: unknown;
 }) {
-  const scope = normalizeScope(input.scope);
+  const hidden = input.hidden === true;
+  const scope = hidden ? "personal" : normalizeScope(input.scope);
   const language = normalizeLanguage(input.language);
   const folder =
-    typeof input.folderId === "string" && input.folderId.length > 0
+    hidden
+      ? null
+      : typeof input.folderId === "string" && input.folderId.length > 0
       ? await getFolderForUser(ownerUserId, input.folderId, scope)
       : await ensureDefaultFolder(ownerUserId, scope);
 
@@ -205,7 +234,14 @@ export async function createNote(ownerUserId: string, input: {
   const [orderRow] = await getDb()
     .select({ value: max(notes.sortOrder) })
     .from(notes)
-    .where(and(...noteScopeConditions(ownerUserId, scope), ...noteFolderConditions(folderId), isNull(notes.deletedAt)));
+    .where(
+      and(
+        ...noteScopeConditions(ownerUserId, scope),
+        ...noteFolderConditions(folderId),
+        isNull(notes.deletedAt),
+        eq(notes.archived, hidden ? 1 : 0),
+      ),
+    );
 
   const note = {
     id,
@@ -218,7 +254,7 @@ export async function createNote(ownerUserId: string, input: {
     filePath,
     pinned: 0,
     sortOrder: (orderRow?.value ?? 0) + 10,
-    archived: 0,
+    archived: hidden ? 1 : 0,
     deletedAt: null,
     alertAt: null,
     calendarAt: null,
@@ -247,11 +283,12 @@ export async function getNoteDetail(
   noteIdInput: unknown,
   scopeInput?: unknown,
   deletedFilter: NoteDeletedFilter = "active",
+  archiveFilter: NoteArchiveFilter = "visible",
 ) {
   const noteId = assertSafeId(noteIdInput, "note id");
 
   return withNoteMutationLock(noteId, async () => {
-    const note = await getNoteForUser(ownerUserId, noteId, scopeInput, deletedFilter);
+    const note = await getNoteForUser(ownerUserId, noteId, scopeInput, deletedFilter, archiveFilter);
     const content = await readMarkdownFile(note.filePath);
     return noteToDetailDto(note, content);
   });
@@ -267,6 +304,7 @@ export async function updateNote(ownerUserId: string, noteIdInput: unknown, inpu
   alertAt?: unknown;
   calendarAt?: unknown;
   scope?: unknown;
+  hiddenContext?: unknown;
 }) {
   const noteId = assertSafeId(noteIdInput, "note id");
 
@@ -283,9 +321,11 @@ async function updateNoteLocked(ownerUserId: string, noteId: string, input: {
   alertAt?: unknown;
   calendarAt?: unknown;
   scope?: unknown;
+  hiddenContext?: unknown;
 }) {
   const scope = normalizeScope(input.scope);
-  const note = await getNoteForUser(ownerUserId, noteId, scope);
+  const archiveFilter: NoteArchiveFilter = input.hiddenContext === true ? "hidden" : "visible";
+  const note = await getNoteForUser(ownerUserId, noteId, scope, "active", archiveFilter);
   const updates: Partial<typeof notes.$inferInsert> = {
     updatedAt: new Date().toISOString(),
     updatedByUserId: ownerUserId,
@@ -353,14 +393,21 @@ async function updateNoteLocked(ownerUserId: string, noteId: string, input: {
     const result = getDb()
       .update(notes)
       .set(updates)
-      .where(and(eq(notes.id, note.id), ...noteScopeConditions(ownerUserId, scope), isNull(notes.deletedAt)))
+      .where(
+        and(
+          eq(notes.id, note.id),
+          ...noteScopeConditions(ownerUserId, scope),
+          isNull(notes.deletedAt),
+          ...noteArchiveConditions(archiveFilter),
+        ),
+      )
       .run();
 
     if (result.changes === 0) {
       throw new Error("Note was changed before it could be saved.");
     }
 
-    const updated = await getNoteForUser(ownerUserId, note.id, scope);
+    const updated = await getNoteForUser(ownerUserId, note.id, scope, "active", archiveFilter);
     return noteToDetailDto(updated, content ?? (await readMarkdownFile(updated.filePath)));
   } catch (error) {
     if (wroteContent && previousContent !== null) {
@@ -371,10 +418,17 @@ async function updateNoteLocked(ownerUserId: string, noteId: string, input: {
   }
 }
 
-export async function deleteNote(ownerUserId: string, noteIdInput: unknown, scopeInput?: unknown) {
+export async function deleteNote(
+  ownerUserId: string,
+  noteIdInput: unknown,
+  scopeInput?: unknown,
+  archiveFilter: NoteArchiveFilter = "visible",
+) {
   const noteId = assertSafeId(noteIdInput, "note id");
 
-  return withNoteMutationLock(noteId, async () => deleteNoteLocked(ownerUserId, noteId, scopeInput));
+  return withNoteMutationLock(noteId, async () =>
+    deleteNoteLocked(ownerUserId, noteId, scopeInput, archiveFilter),
+  );
 }
 
 export async function hardDeleteNote(ownerUserId: string, noteIdInput: unknown, scopeInput?: unknown) {
@@ -389,9 +443,118 @@ export async function restoreNote(ownerUserId: string, noteIdInput: unknown, sco
   return withNoteMutationLock(noteId, async () => restoreNoteLocked(ownerUserId, noteId, scopeInput));
 }
 
-async function deleteNoteLocked(ownerUserId: string, noteId: string, scopeInput?: unknown) {
+export async function hideNote(ownerUserId: string, noteIdInput: unknown, scopeInput?: unknown) {
+  const noteId = assertSafeId(noteIdInput, "note id");
+
+  return withNoteMutationLock(noteId, async () => {
+    const scope = normalizeScope(scopeInput);
+
+    if (scope !== "personal") {
+      throw new Error("Only personal notes can be hidden.");
+    }
+
+    const note = await getNoteForUser(ownerUserId, noteId, scope, "active", "visible");
+    const [orderRow] = await getDb()
+      .select({ value: max(notes.sortOrder) })
+      .from(notes)
+      .where(
+        and(
+          eq(notes.scope, "personal"),
+          eq(notes.ownerUserId, ownerUserId),
+          isNull(notes.deletedAt),
+          eq(notes.archived, 1),
+        ),
+      );
+    const now = new Date().toISOString();
+    const result = getDb()
+      .update(notes)
+      .set({
+        folderId: null,
+        pinned: 0,
+        sortOrder: (orderRow?.value ?? 0) + 10,
+        archived: 1,
+        updatedAt: now,
+        updatedByUserId: ownerUserId,
+      })
+      .where(
+        and(
+          eq(notes.id, note.id),
+          ...noteScopeConditions(ownerUserId, scope),
+          isNull(notes.deletedAt),
+          eq(notes.archived, 0),
+        ),
+      )
+      .run();
+
+    if (result.changes === 0) {
+      throw new Error("Note was changed before it could be hidden.");
+    }
+
+    const hidden = await getNoteForUser(ownerUserId, note.id, scope, "active", "hidden");
+    return noteToDetailDto(hidden, await readMarkdownFile(hidden.filePath));
+  });
+}
+
+export async function unhideNote(ownerUserId: string, noteIdInput: unknown, scopeInput?: unknown) {
+  const noteId = assertSafeId(noteIdInput, "note id");
+
+  return withNoteMutationLock(noteId, async () => {
+    const scope = normalizeScope(scopeInput);
+
+    if (scope !== "personal") {
+      throw new Error("Only personal notes can be hidden.");
+    }
+
+    const note = await getNoteForUser(ownerUserId, noteId, scope, "active", "hidden");
+    const [orderRow] = await getDb()
+      .select({ value: max(notes.sortOrder) })
+      .from(notes)
+      .where(
+        and(
+          eq(notes.scope, "personal"),
+          eq(notes.ownerUserId, ownerUserId),
+          isNull(notes.deletedAt),
+          eq(notes.archived, 0),
+          isNull(notes.folderId),
+        ),
+      );
+    const now = new Date().toISOString();
+    const result = getDb()
+      .update(notes)
+      .set({
+        folderId: null,
+        sortOrder: (orderRow?.value ?? 0) + 10,
+        archived: 0,
+        updatedAt: now,
+        updatedByUserId: ownerUserId,
+      })
+      .where(
+        and(
+          eq(notes.id, note.id),
+          ...noteScopeConditions(ownerUserId, scope),
+          isNull(notes.deletedAt),
+          eq(notes.archived, 1),
+        ),
+      )
+      .run();
+
+    if (result.changes === 0) {
+      throw new Error("Note was changed before it could be restored.");
+    }
+
+    const restored = await getNoteForUser(ownerUserId, note.id, scope, "active", "visible");
+    return noteToDetailDto(restored, await readMarkdownFile(restored.filePath));
+  });
+}
+
+async function deleteNoteLocked(
+  ownerUserId: string,
+  noteId: string,
+  scopeInput?: unknown,
+  archiveFilter: NoteArchiveFilter = "visible",
+) {
   const scope = normalizeScope(scopeInput);
-  const note = await getNoteForUser(ownerUserId, noteId, scope);
+  const note = await getNoteForUser(ownerUserId, noteId, scope, "active", archiveFilter);
   const trashPath =
     scope === "group" ? groupTrashRelativePath(note.id) : trashRelativePath(ownerUserId, note.id);
   const now = new Date().toISOString();
@@ -404,10 +567,18 @@ async function deleteNoteLocked(ownerUserId: string, noteId: string, scopeInput?
       .set({
         filePath: trashPath,
         deletedAt: now,
+        archived: 0,
         updatedAt: now,
         updatedByUserId: ownerUserId,
       })
-      .where(and(eq(notes.id, note.id), ...noteScopeConditions(ownerUserId, scope), isNull(notes.deletedAt)))
+      .where(
+        and(
+          eq(notes.id, note.id),
+          ...noteScopeConditions(ownerUserId, scope),
+          isNull(notes.deletedAt),
+          ...noteArchiveConditions(archiveFilter),
+        ),
+      )
       .run();
 
     if (result.changes === 0) {
@@ -492,12 +663,14 @@ export async function getNoteContentForTemplate(
 }
 
 type NoteDeletedFilter = "active" | "trash" | "any";
+type NoteArchiveFilter = "visible" | "hidden" | "any";
 
 async function getNoteForUser(
   ownerUserId: string,
   noteIdInput: unknown,
   scopeInput?: unknown,
   deletedFilter: NoteDeletedFilter = "active",
+  archiveFilter: NoteArchiveFilter = "visible",
 ) {
   const scope = normalizeScope(scopeInput);
   const noteId = assertSafeId(noteIdInput, "note id");
@@ -510,6 +683,7 @@ async function getNoteForUser(
         eq(notes.id, noteId),
         ...noteScopeConditions(ownerUserId, scope),
         ...noteDeletedConditions(deletedFilter),
+        ...noteArchiveConditions(archiveFilter),
       ),
     )
     .limit(1);
@@ -585,6 +759,18 @@ function noteDeletedConditions(filter: NoteDeletedFilter) {
   }
 
   return [isNull(notes.deletedAt)];
+}
+
+function noteArchiveConditions(filter: NoteArchiveFilter) {
+  if (filter === "hidden") {
+    return [eq(notes.archived, 1)];
+  }
+
+  if (filter === "any") {
+    return [];
+  }
+
+  return [eq(notes.archived, 0)];
 }
 
 function getFolderPathSegments(

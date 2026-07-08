@@ -14,10 +14,15 @@ type MarkdownPreviewProps = {
 type Block =
   | { type: "heading"; level: 1 | 2 | 3; text: string; key: string }
   | { type: "paragraph"; text: string; key: string }
-  | { type: "bullet"; text: string; key: string }
+  | { type: "bulletList"; items: Array<{ text: string; key: string }>; key: string }
+  | { type: "orderedList"; items: Array<{ number: number; text: string; key: string }>; key: string }
   | { type: "checkbox"; text: string; checked: boolean; lineIndex: number; key: string }
   | { type: "code"; text: string; key: string }
   | { type: "rule"; key: string };
+
+type PendingList =
+  | { type: "bulletList"; items: Array<{ text: string; key: string }>; key: string }
+  | { type: "orderedList"; items: Array<{ number: number; text: string; key: string }>; key: string };
 
 export function MarkdownPreview({ content, onToggleCheckbox }: MarkdownPreviewProps) {
   const { t } = useI18n();
@@ -81,12 +86,31 @@ export function MarkdownPreview({ content, onToggleCheckbox }: MarkdownPreviewPr
           );
         }
 
-        if (block.type === "bullet") {
+        if (block.type === "bulletList") {
           return (
-            <div key={block.key} className="flex gap-3 px-2.5 leading-7">
-              <span className="mt-3 h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500/70" />
-              <span>{renderInline(block.text)}</span>
-            </div>
+            <ul key={block.key} className="space-y-1 px-2.5">
+              {block.items.map((item) => (
+                <li key={item.key} className="flex gap-3 leading-7">
+                  <span className="mt-3 h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500/70" />
+                  <span>{renderInline(item.text)}</span>
+                </li>
+              ))}
+            </ul>
+          );
+        }
+
+        if (block.type === "orderedList") {
+          return (
+            <ol key={block.key} className="space-y-1 px-2.5">
+              {block.items.map((item) => (
+                <li key={item.key} className="flex gap-3 leading-7">
+                  <span className="min-w-5 shrink-0 text-right font-semibold text-slate-400 dark:text-slate-500">
+                    {item.number}.
+                  </span>
+                  <span>{renderInline(item.text)}</span>
+                </li>
+              ))}
+            </ol>
           );
         }
 
@@ -119,10 +143,12 @@ function parseMarkdown(content: string) {
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   const blocks: Block[] = [];
   let paragraph: string[] = [];
+  let pendingList: PendingList | null = null;
   let code: string[] = [];
   let inCode = false;
 
   function flushParagraph(lineIndex: number) {
+    flushList();
     const text = paragraph.join(" ").replace(/\s+/g, " ").trim();
 
     if (text) {
@@ -130,6 +156,13 @@ function parseMarkdown(content: string) {
     }
 
     paragraph = [];
+  }
+
+  function flushList() {
+    if (pendingList) {
+      blocks.push(pendingList);
+      pendingList = null;
+    }
   }
 
   function flushCode(lineIndex: number) {
@@ -147,6 +180,7 @@ function parseMarkdown(content: string) {
         inCode = false;
       } else {
         flushParagraph(lineIndex);
+        flushList();
         inCode = true;
       }
       return;
@@ -165,6 +199,7 @@ function parseMarkdown(content: string) {
     const checkboxMatch = line.match(/^\s*[-*]\s+\[([ xX])\]\s*(.*)$/);
     if (checkboxMatch) {
       flushParagraph(lineIndex);
+      flushList();
       blocks.push({
         type: "checkbox",
         checked: checkboxMatch[1]?.toLowerCase() === "x",
@@ -178,6 +213,7 @@ function parseMarkdown(content: string) {
     const headingMatch = line.match(/^(#{1,3})\s+(.+)$/);
     if (headingMatch) {
       flushParagraph(lineIndex);
+      flushList();
       blocks.push({
         type: "heading",
         level: headingMatch[1].length as 1 | 2 | 3,
@@ -189,6 +225,7 @@ function parseMarkdown(content: string) {
 
     if (/^[-*_]{3,}$/.test(trimmed)) {
       flushParagraph(lineIndex);
+      flushList();
       blocks.push({ type: "rule", key: `rule-${lineIndex}` });
       return;
     }
@@ -196,14 +233,37 @@ function parseMarkdown(content: string) {
     const bulletMatch = line.match(/^\s*[-*]\s+(.*)$/);
     if (bulletMatch) {
       flushParagraph(lineIndex);
-      blocks.push({
-        type: "bullet",
+
+      if (pendingList?.type !== "bulletList") {
+        flushList();
+        pendingList = { type: "bulletList", items: [], key: `bullet-list-${lineIndex}` };
+      }
+
+      pendingList.items.push({
         text: bulletMatch[1],
         key: `bullet-${lineIndex}`,
       });
       return;
     }
 
+    const orderedMatch = line.match(/^\s*(\d+)\.\s+(.*)$/);
+    if (orderedMatch) {
+      flushParagraph(lineIndex);
+
+      if (pendingList?.type !== "orderedList") {
+        flushList();
+        pendingList = { type: "orderedList", items: [], key: `ordered-list-${lineIndex}` };
+      }
+
+      pendingList.items.push({
+        number: Number(orderedMatch[1]),
+        text: orderedMatch[2] ?? "",
+        key: `ordered-${lineIndex}`,
+      });
+      return;
+    }
+
+    flushList();
     paragraph.push(trimmed);
   });
 
@@ -211,6 +271,7 @@ function parseMarkdown(content: string) {
     flushCode(lines.length);
   }
 
+  flushList();
   flushParagraph(lines.length);
   return blocks;
 }

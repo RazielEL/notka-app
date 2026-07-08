@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE NOT NULL,
   display_name TEXT NOT NULL,
   password_hash TEXT NOT NULL,
+  hidden_pin_hash TEXT,
   role TEXT NOT NULL DEFAULT 'user',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -356,6 +357,28 @@ function runMigrations(database: Database.Database) {
     database
       .prepare("INSERT INTO __drizzle_migrations (id, applied_at) VALUES (?, ?)")
       .run(alertNotesMigrationId, new Date().toISOString());
+  }
+
+  const hiddenNotesMigrationId = "0008_hidden_notes";
+  const hiddenNotesApplied = database
+    .prepare("SELECT id FROM __drizzle_migrations WHERE id = ?")
+    .get(hiddenNotesMigrationId);
+
+  if (!hiddenNotesApplied) {
+    const userColumns = database.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+    const noteColumns = database.prepare("PRAGMA table_info(notes)").all() as Array<{ name: string }>;
+
+    if (!userColumns.some((column) => column.name === "hidden_pin_hash")) {
+      database.exec("ALTER TABLE users ADD COLUMN hidden_pin_hash TEXT;");
+    }
+
+    if (!noteColumns.some((column) => column.name === "archived")) {
+      database.exec("ALTER TABLE notes ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;");
+    }
+
+    database
+      .prepare("INSERT INTO __drizzle_migrations (id, applied_at) VALUES (?, ?)")
+      .run(hiddenNotesMigrationId, new Date().toISOString());
   }
 }
 

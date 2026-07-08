@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Lock,
   NotebookPen,
   PanelLeftOpen,
   Pin,
@@ -49,7 +50,7 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type AppArea = "personal" | "group" | "calendar" | "alertNotes";
+type AppArea = "personal" | "group" | "calendar" | "alertNotes" | "hidden";
 type DropPosition = "before" | "after";
 type AlertNoteMutationInput = {
   text: string;
@@ -117,6 +118,9 @@ export function NotkaApp({
   const [folders, setFolders] = useState(initialFolders);
   const [notes, setNotes] = useState(initialNotes);
   const [trashNotes, setTrashNotes] = useState<NoteSummaryDto[]>([]);
+  const [hiddenNotes, setHiddenNotes] = useState<NoteSummaryDto[]>([]);
+  const [hiddenUnlocked, setHiddenUnlocked] = useState(false);
+  const [hiddenHasPin, setHiddenHasPin] = useState(false);
   const [templates, setTemplates] = useState(initialTemplates);
   const [groupUsers, setGroupUsers] = useState<AppUserDto[]>([]);
   const [calendarNotes, setCalendarNotes] = useState<NoteSummaryDto[]>([]);
@@ -138,6 +142,7 @@ export function NotkaApp({
   const listRequestIdRef = useRef(0);
   const noteRequestIdRef = useRef(0);
   const sidebarSwipeRef = useRef<SidebarSwipeGesture | null>(null);
+  const previousAreaRef = useRef<AppArea>("personal");
   const currentScope: NoteScope = activeArea === "group" ? "group" : "personal";
 
   const refreshTrashNotes = useCallback(async (scope: NoteScope = currentScope) => {
@@ -148,6 +153,38 @@ export function NotkaApp({
       setTrashNotes(body.notes as NoteSummaryDto[]);
     }
   }, [currentScope]);
+
+  const refreshHiddenNotes = useCallback(async () => {
+    const response = await fetch("/api/notes?hidden=true");
+
+    if (response.ok) {
+      const body = await response.json();
+      setHiddenNotes(body.notes as NoteSummaryDto[]);
+      setHiddenUnlocked(true);
+      return;
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      setHiddenNotes([]);
+      setHiddenUnlocked(false);
+    }
+  }, []);
+
+  const refreshHiddenSettings = useCallback(async () => {
+    const response = await fetch("/api/hidden-notes");
+
+    if (response.ok) {
+      const body = await response.json();
+      setHiddenHasPin(Boolean(body.hasPin));
+      setHiddenUnlocked(Boolean(body.unlocked));
+    }
+  }, []);
+
+  const lockHiddenNotes = useCallback(async () => {
+    setHiddenUnlocked(false);
+    setHiddenNotes([]);
+    await fetch("/api/hidden-notes", { method: "DELETE" }).catch(() => undefined);
+  }, []);
 
   const refreshFoldersAndNotes = useCallback(async (scope: NoteScope = currentScope) => {
     const requestId = listRequestIdRef.current + 1;
@@ -235,12 +272,33 @@ export function NotkaApp({
   useEffect(() => {
     const storedArea = localStorage.getItem("notka-area");
 
-    if (storedArea === "group" || storedArea === "calendar" || storedArea === "alertNotes") {
+    if (
+      storedArea === "group" ||
+      storedArea === "calendar" ||
+      storedArea === "alertNotes" ||
+      storedArea === "hidden"
+    ) {
       setActiveArea(storedArea);
     }
 
     setAreaReady(true);
   }, []);
+
+  useEffect(() => {
+    const previousArea = previousAreaRef.current;
+
+    previousAreaRef.current = activeArea;
+
+    if (!areaReady || previousArea !== "hidden" || activeArea === "hidden") {
+      return;
+    }
+
+    void lockHiddenNotes();
+  }, [activeArea, areaReady, lockHiddenNotes]);
+
+  useEffect(() => {
+    void refreshHiddenSettings();
+  }, [refreshHiddenSettings]);
 
   useEffect(() => {
     if (!areaReady) {
@@ -252,8 +310,23 @@ export function NotkaApp({
       return;
     }
 
+    if (activeArea === "hidden") {
+      if (hiddenUnlocked) {
+        void refreshHiddenNotes();
+      }
+      return;
+    }
+
     void refreshFoldersAndNotes(currentScope);
-  }, [activeArea, areaReady, currentScope, refreshCalendarNotes, refreshFoldersAndNotes]);
+  }, [
+    activeArea,
+    areaReady,
+    currentScope,
+    hiddenUnlocked,
+    refreshCalendarNotes,
+    refreshFoldersAndNotes,
+    refreshHiddenNotes,
+  ]);
 
   useEffect(() => {
     if (!areaReady) {
@@ -322,7 +395,7 @@ export function NotkaApp({
   }, [preferences]);
 
   useEffect(() => {
-    if (activeArea === "calendar") {
+    if (activeArea === "calendar" || activeArea === "hidden") {
       return;
     }
 
@@ -352,6 +425,7 @@ export function NotkaApp({
       pinnedNotes: notes.filter((note) => note.pinned && matchesSearch(note)),
       sidebarNotes: notes.filter(matchesSearch).sort(sortNotesByImportance),
       trashNotes: trashNotes.filter(matchesSearch).sort(sortTrashNotes),
+      hiddenNotes: hiddenNotes.filter(matchesSearch).sort(sortNotesByImportance),
       notes: notes
         .filter((note) => {
           if (query) {
@@ -366,7 +440,7 @@ export function NotkaApp({
         })
         .sort(sortNotesByImportance),
     };
-  }, [notes, search, selectedFolderId, trashNotes]);
+  }, [hiddenNotes, notes, search, selectedFolderId, trashNotes]);
   const alertShortcutNote = useMemo(
     () =>
       notes
@@ -419,6 +493,31 @@ export function NotkaApp({
     closeSidebarOnMobile();
   }
 
+  function selectHidden() {
+    if (
+      editorHasUnsavedChanges &&
+      !window.confirm(t("confirm.unsavedSwitch"))
+    ) {
+      return;
+    }
+
+    noteRequestIdRef.current += 1;
+    setActiveArea("hidden");
+    setSelectedTrash(false);
+    setSelectedFolderId(null);
+    setSelectedNote(null);
+    setLoadingNoteId(null);
+    setEditorHasUnsavedChanges(false);
+    setSearch("");
+    localStorage.setItem("notka-area", "hidden");
+
+    if (hiddenUnlocked) {
+      void refreshHiddenNotes();
+    }
+
+    closeSidebarOnMobile();
+  }
+
   async function selectNote(noteId: string) {
     await selectNoteByScope(noteId, currentScope, false);
   }
@@ -427,11 +526,25 @@ export function NotkaApp({
     await selectNoteByScope(noteId, currentScope, true);
   }
 
-  async function selectNoteByScope(noteId: string, scope: NoteScope, trash = false) {
+  async function selectHiddenNote(noteId: string) {
+    await selectNoteByScope(noteId, "personal", false, true);
+  }
+
+  async function selectNoteByScope(noteId: string, scope: NoteScope, trash = false, hidden = false) {
     const requestId = noteRequestIdRef.current + 1;
     noteRequestIdRef.current = requestId;
     setLoadingNoteId(noteId);
-    const response = await fetch(`/api/notes/${noteId}?scope=${scope}${trash ? "&trash=true" : ""}`);
+    const params = new URLSearchParams({ scope });
+
+    if (trash) {
+      params.set("trash", "true");
+    }
+
+    if (hidden) {
+      params.set("hidden", "true");
+    }
+
+    const response = await fetch(`/api/notes/${noteId}?${params.toString()}`);
     const body = await response.json().catch(() => ({}));
 
     if (noteRequestIdRef.current !== requestId) {
@@ -443,8 +556,8 @@ export function NotkaApp({
     if (response.ok) {
       setSelectedNote(body.note as NoteDetailDto);
       setSelectedTrash(trash);
-      setActiveArea(scope === "group" ? "group" : "personal");
-      localStorage.setItem("notka-area", scope === "group" ? "group" : "personal");
+      setActiveArea(hidden ? "hidden" : scope === "group" ? "group" : "personal");
+      localStorage.setItem("notka-area", hidden ? "hidden" : scope === "group" ? "group" : "personal");
       closeSidebarOnMobile();
     }
   }
@@ -473,14 +586,16 @@ export function NotkaApp({
   }
 
   async function createNote(templateId?: string, targetFolderId: string | null = selectedFolderId) {
+    const hidden = activeArea === "hidden";
     const response = await fetch("/api/notes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        folderId: targetFolderId,
+        folderId: hidden ? null : targetFolderId,
         templateId,
-        scope: currentScope,
+        scope: hidden ? "personal" : currentScope,
         language,
+        hidden,
       }),
     });
     const body = await response.json().catch(() => ({}));
@@ -488,7 +603,11 @@ export function NotkaApp({
     if (response.ok) {
       const note = body.note as NoteDetailDto;
       setSelectedTrash(false);
-      upsertNote(note);
+      if (hidden) {
+        upsertHiddenNote(note);
+      } else {
+        upsertNote(note);
+      }
       setSelectedNote(note);
       closeSidebarOnMobile();
     }
@@ -717,6 +836,105 @@ export function NotkaApp({
     }
   }
 
+  async function unlockHiddenNotes(value: string) {
+    const response = await fetch("/api/hidden-notes/unlock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return false;
+    }
+
+    setHiddenHasPin(Boolean(body.hasPin));
+    setHiddenUnlocked(true);
+    await refreshHiddenNotes();
+    return true;
+  }
+
+  async function setHiddenPin(pin: string | null, password: string) {
+    const response = await fetch("/api/hidden-notes", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin, password }),
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return false;
+    }
+
+    setHiddenHasPin(Boolean(body.hasPin));
+    setHiddenUnlocked(Boolean(body.unlocked));
+    return true;
+  }
+
+  async function ensureHiddenUnlocked() {
+    if (hiddenUnlocked) {
+      return true;
+    }
+
+    const value = window.prompt(t("hidden.pinOrPassword"));
+
+    if (!value) {
+      return false;
+    }
+
+    const unlocked = await unlockHiddenNotes(value);
+
+    if (!unlocked) {
+      window.alert(t("hidden.invalidUnlock"));
+    }
+
+    return unlocked;
+  }
+
+  async function hideNote(noteId: string) {
+    if (!(await ensureHiddenUnlocked())) {
+      return;
+    }
+
+    const response = await fetch(`/api/notes/${noteId}/hidden`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hidden: true, scope: "personal" }),
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (response.ok) {
+      setNotes((current) => current.filter((note) => note.id !== noteId));
+      setCalendarNotes((current) => current.filter((note) => note.id !== noteId));
+      upsertHiddenNote(body.note as NoteDetailDto);
+      setSelectedNote(null);
+      setLoadingNoteId(null);
+      setEditorHasUnsavedChanges(false);
+    }
+  }
+
+  async function unhideNote(noteId: string) {
+    const response = await fetch(`/api/notes/${noteId}/hidden`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hidden: false, scope: "personal" }),
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (response.ok) {
+      const note = body.note as NoteDetailDto;
+      setHiddenNotes((current) => current.filter((entry) => entry.id !== noteId));
+      upsertNote(note);
+      setSelectedNote(note);
+      setSelectedTrash(false);
+      setSelectedFolderId(null);
+      setActiveArea("personal");
+      localStorage.setItem("notka-area", "personal");
+      localStorage.setItem(folderStorageKey("personal"), "all");
+      closeSidebarOnMobile();
+    }
+  }
+
   async function createTemplate(noteId: string) {
     const fallback = selectedNote?.title
       ? t("editor.templateSuffix", { title: selectedNote.title })
@@ -764,14 +982,36 @@ export function NotkaApp({
     }
   }
 
+  function upsertHiddenNote(note: NoteDetailDto | NoteSummaryDto) {
+    const summary = toSummary(note);
+
+    setHiddenNotes((current) => {
+      const exists = current.some((entry) => entry.id === summary.id);
+      const next = exists
+        ? current.map((entry) => (entry.id === summary.id ? summary : entry))
+        : [summary, ...current];
+
+      return next.sort(sortNotesByImportance);
+    });
+  }
+
   function handleSaved(note: NoteDetailDto) {
+    if (activeArea === "hidden") {
+      upsertHiddenNote(note);
+      setSelectedNote(note);
+      return;
+    }
+
     upsertNote(note);
     setSelectedNote(note);
   }
 
   function handleDeleted(noteId: string) {
     noteRequestIdRef.current += 1;
-    if (selectedTrash) {
+    if (activeArea === "hidden") {
+      setHiddenNotes((current) => current.filter((note) => note.id !== noteId));
+      void refreshTrashNotes("personal");
+    } else if (selectedTrash) {
       setTrashNotes((current) => current.filter((note) => note.id !== noteId));
     } else {
       setNotes((current) => current.filter((note) => note.id !== noteId));
@@ -798,14 +1038,20 @@ export function NotkaApp({
       return;
     }
 
-    if (nextArea === "alertNotes") {
+    if (nextArea === "alertNotes" || nextArea === "hidden") {
       setActiveArea(nextArea);
       noteRequestIdRef.current += 1;
       setSelectedNote(null);
       setSelectedTrash(false);
       setLoadingNoteId(null);
       setEditorHasUnsavedChanges(false);
+      setSearch("");
       localStorage.setItem("notka-area", nextArea);
+
+      if (nextArea === "hidden" && hiddenUnlocked) {
+        void refreshHiddenNotes();
+      }
+
       return;
     }
 
@@ -942,6 +1188,9 @@ export function NotkaApp({
           alertNotes={alertNotes}
           pinnedNotes={filtered.pinnedNotes}
           trashNotes={filtered.trashNotes}
+          hiddenNotes={filtered.hiddenNotes}
+          hiddenUnlocked={hiddenUnlocked}
+          hiddenHasPin={hiddenHasPin}
           selectedFolderId={selectedTrash ? null : selectedFolderId}
           selectedNoteId={selectedNote?.id ?? loadingNoteId}
           selectedTrash={selectedTrash}
@@ -952,8 +1201,10 @@ export function NotkaApp({
           onSelectFolder={selectFolder}
           onSelectAllNotes={selectAllNotes}
           onSelectTrash={selectTrash}
+          onSelectHidden={selectHidden}
           onSelectNote={selectNote}
           onSelectTrashNote={selectTrashNote}
+          onSelectHiddenNote={selectHiddenNote}
           onCreateNoteInFolder={(folderId) => void createNote(undefined, folderId)}
           onCreateFolder={createFolder}
           onRenameFolder={renameFolder}
@@ -964,6 +1215,7 @@ export function NotkaApp({
           onCloseSidebar={() => setSidebarOpen(false)}
           preferences={preferences}
           onPreferencesChange={updatePreferences}
+          onSetHiddenPin={setHiddenPin}
           onLogout={logout}
         />
       </div>
@@ -981,6 +1233,41 @@ export function NotkaApp({
           onShowGroupNotesChange={setShowGroupCalendarNotes}
           onSelectNote={(note) => void selectCalendarNote(note)}
         />
+      ) : activeArea === "hidden" ? (
+        hiddenUnlocked ? (
+          selectedNote ? (
+            <NoteEditor
+              key={selectedNote.id}
+              note={selectedNote}
+              scope="personal"
+              folderPath={`/${t("sidebar.hiddenNotes")}`}
+              templates={templates}
+              onSaved={handleSaved}
+              onDeleted={handleDeleted}
+              onCreateTemplate={createTemplate}
+              onCreateFromTemplate={(templateId) => void createNote(templateId)}
+              onDirtyChange={setEditorHasUnsavedChanges}
+              isHidden
+              onUnhide={(noteId) => void unhideNote(noteId)}
+            />
+          ) : (
+            <FolderOverview
+              areaLabel={t("hidden.title")}
+              title={t("sidebar.hiddenNotes")}
+              path={`/${t("sidebar.hiddenNotes")}`}
+              emptyText={t("overview.noHiddenNotes")}
+              groupUsers={[]}
+              notes={filtered.hiddenNotes}
+              onCreateNote={() => void createNote(undefined, null)}
+              onSelectNote={(noteId) => void selectHiddenNote(noteId)}
+            />
+          )
+        ) : (
+          <HiddenNotesLockView
+            hasPin={hiddenHasPin}
+            onUnlock={unlockHiddenNotes}
+          />
+        )
       ) : activeArea === "alertNotes" ? (
         <AlertNotesView
           alertNotes={alertNotes}
@@ -1001,6 +1288,8 @@ export function NotkaApp({
           onCreateFromTemplate={(templateId) => void createNote(templateId)}
           onDirtyChange={setEditorHasUnsavedChanges}
           isTrash={selectedTrash}
+          canHide={!selectedTrash && activeArea === "personal"}
+          onHide={(noteId) => void hideNote(noteId)}
         />
       ) : selectedTrash ? (
         <FolderOverview
@@ -1155,6 +1444,77 @@ function FolderOverview({
   );
 }
 
+function HiddenNotesLockView({
+  hasPin,
+  onUnlock,
+}: {
+  hasPin: boolean;
+  onUnlock: (value: string) => Promise<boolean>;
+}) {
+  const { t } = useI18n();
+  const [value, setValue] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const label = hasPin ? t("hidden.pinOrPassword") : t("auth.password");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!value.trim() || unlocking) {
+      return;
+    }
+
+    setUnlocking(true);
+    setError(null);
+    const unlocked = await onUnlock(value);
+    setUnlocking(false);
+
+    if (!unlocked) {
+      setError(t("hidden.invalidUnlock"));
+    }
+  }
+
+  return (
+    <section className="glass-panel flex min-h-[28rem] flex-col rounded-2xl p-5">
+      <header className="border-b border-black/[0.06] pb-4 dark:border-white/[0.08]">
+        <div className="mb-1 text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
+          {t("hidden.locked")}
+        </div>
+        <h2 className="flex items-center gap-3 text-2xl font-semibold text-slate-950 dark:text-white">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-teal-500/15 bg-teal-500/10 text-teal-700 dark:text-teal-300">
+            <Lock className="h-5 w-5" />
+          </span>
+          {t("hidden.title")}
+        </h2>
+      </header>
+
+      <form className="mt-5 grid max-w-sm gap-3" onSubmit={submit}>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
+            {label}
+          </span>
+          <input
+            className="notka-input h-11 py-0"
+            type="password"
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            placeholder={t("hidden.pinOrPassword")}
+            autoComplete="current-password"
+            autoFocus
+          />
+        </label>
+        <Button type="submit" variant="primary" disabled={!value.trim() || unlocking}>
+          <Lock className="h-4 w-4" />
+          {unlocking ? t("hidden.unlocking") : t("hidden.unlock")}
+        </Button>
+        {error ? (
+          <p className="text-sm text-rose-500 dark:text-rose-300">{error}</p>
+        ) : null}
+      </form>
+    </section>
+  );
+}
+
 function AlertNotesView({
   alertNotes,
   onCreateAlertNote,
@@ -1262,20 +1622,37 @@ function AlertNotesView({
           </div>
           {alertNotes.length > 0 ? (
             <div className="max-h-[calc(100dvh-13rem)] overflow-y-auto p-2">
-              {alertNotes.map((alertNote) => (
+              {alertNotes.map((alertNote) => {
+                const tone = alertCalendarTone(alertNote.scheduledAt);
+
+                return (
                 <button
                   key={alertNote.id}
                   className={cn(
                     "group mb-2 flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition hover:-translate-y-px focus:outline-none focus:ring-4 focus:ring-teal-500/10",
                     editingId === alertNote.id
                       ? "border-teal-400/35 bg-teal-500/[0.12] shadow-sm shadow-teal-500/10 dark:bg-teal-500/[0.1]"
-                      : "border-black/[0.06] bg-white/30 hover:border-teal-500/20 hover:bg-white/50 dark:border-white/[0.07] dark:bg-white/[0.035] dark:hover:bg-white/[0.065]",
+                      : calendarToneClass(tone),
                   )}
                   type="button"
                   onClick={() => beginEdit(alertNote)}
                 >
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300">
-                    <CheckSquare className="h-3.5 w-3.5" />
+                  <span
+                    className={cn(
+                      "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border",
+                      tone === "red" &&
+                        "border-rose-400/25 bg-rose-500/15 text-rose-500 dark:text-rose-300",
+                      tone === "yellow" &&
+                        "border-amber-400/25 bg-amber-500/15 text-amber-600 dark:text-amber-300",
+                      tone === "green" &&
+                        "border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300",
+                    )}
+                  >
+                    {tone === "red" ? (
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                    ) : (
+                      <CheckSquare className="h-3.5 w-3.5" />
+                    )}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold text-slate-950 dark:text-white">
@@ -1295,7 +1672,8 @@ function AlertNotesView({
                     </span>
                   </span>
                 </button>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="flex min-h-[18rem] flex-col items-center justify-center px-5 py-10 text-center">
@@ -1765,8 +2143,13 @@ function CalendarView({
                   }}
                 >
                   <span className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-semibold text-slate-900 dark:text-white">
-                      {calendarEntryTitle(entry)}
+                    <span className="flex min-w-0 items-center gap-2">
+                      {entry.tone === "red" ? (
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-rose-500 dark:text-rose-300" />
+                      ) : null}
+                      <span className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+                        {calendarEntryTitle(entry)}
+                      </span>
                     </span>
                     <span className="shrink-0 text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">
                       {calendarEntryKindLabel(entry, t)}
@@ -1822,7 +2205,9 @@ function CalendarEventButton({
         }
       }}
     >
-      {entry.source === "alertNote" ? (
+      {entry.tone === "red" ? (
+        <AlertTriangle className="h-3 w-3 shrink-0" />
+      ) : entry.source === "alertNote" ? (
         <CheckSquare className="h-3 w-3 shrink-0" />
       ) : entry.kind === "Alert" ? (
         <AlertTriangle className="h-3 w-3 shrink-0" />
@@ -2052,7 +2437,7 @@ function buildCalendarEntries(notes: NoteSummaryDto[], alertNotes: AlertNoteOccu
         kind: "AlertNote",
         alertNote,
         date,
-        tone: "green",
+        tone: alertCalendarTone(alertNote.scheduledAt),
       });
     }
   }

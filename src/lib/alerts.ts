@@ -21,12 +21,8 @@ export function getAlertTone(alertAt: string | null | undefined, now = new Date(
     return "red";
   }
 
-  if (daysUntilDeadline <= 2) {
-    return "yellow";
-  }
-
   if (daysUntilDeadline <= 3) {
-    return "neon";
+    return "yellow";
   }
 
   return "none";

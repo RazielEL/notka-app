@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { hasHiddenAccess } from "@/lib/auth/hidden-access";
 import { apiError, readJson, requireApiUser } from "@/lib/server/api";
 import { deleteNote, getNoteDetail, hardDeleteNote, restoreNote, updateNote } from "@/lib/server/notes";
 
@@ -21,11 +22,18 @@ export async function GET(_request: Request, { params }: RouteContext) {
     }
 
     const url = new URL(_request.url);
+    const hidden = url.searchParams.get("hidden") === "true";
+
+    if (hidden && !hasHiddenAccess(user.id)) {
+      return NextResponse.json({ error: "Hidden notes are locked." }, { status: 403 });
+    }
+
     const note = await getNoteDetail(
       user.id,
       params.noteId,
       url.searchParams.get("scope"),
       url.searchParams.get("trash") === "true" ? "trash" : "active",
+      hidden ? "hidden" : "visible",
     );
     return NextResponse.json({ note });
   } catch (error) {
@@ -47,6 +55,11 @@ export async function PATCH(request: Request, { params }: RouteContext) {
         ? rawBody
         : {};
     const url = new URL(request.url);
+    const hidden = url.searchParams.get("hidden") === "true" || body.hiddenContext === true;
+
+    if (hidden && !hasHiddenAccess(user.id)) {
+      return NextResponse.json({ error: "Hidden notes are locked." }, { status: 403 });
+    }
 
     if (body.restore === true) {
       const note = await restoreNote(user.id, params.noteId, body.scope ?? url.searchParams.get("scope"));
@@ -93,6 +106,8 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       update.scope = url.searchParams.get("scope");
     }
 
+    update.hiddenContext = hidden;
+
     const note = await updateNote(user.id, params.noteId, update);
 
     return NextResponse.json({ note });
@@ -110,10 +125,21 @@ export async function DELETE(_request: Request, { params }: RouteContext) {
     }
 
     const url = new URL(_request.url);
+    const hidden = url.searchParams.get("hidden") === "true";
+
+    if (hidden && !hasHiddenAccess(user.id)) {
+      return NextResponse.json({ error: "Hidden notes are locked." }, { status: 403 });
+    }
+
     const result =
       url.searchParams.get("hard") === "true"
         ? await hardDeleteNote(user.id, params.noteId, url.searchParams.get("scope"))
-        : await deleteNote(user.id, params.noteId, url.searchParams.get("scope"));
+        : await deleteNote(
+            user.id,
+            params.noteId,
+            url.searchParams.get("scope"),
+            hidden ? "hidden" : "visible",
+          );
     return NextResponse.json(result);
   } catch (error) {
     return apiError(error);

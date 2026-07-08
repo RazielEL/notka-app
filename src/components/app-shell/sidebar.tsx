@@ -2,7 +2,6 @@
 
 import {
   AlertTriangle,
-  CalendarClock,
   CheckSquare,
   ChevronDown,
   ChevronRight,
@@ -11,12 +10,12 @@ import {
   FileText,
   Folder,
   FolderPlus,
+  Lock,
   LogOut,
   Pencil,
   PanelLeftClose,
   Pin,
   Plus,
-  Repeat,
   Search,
   Settings,
   Trash2,
@@ -29,7 +28,6 @@ import { translateFolderName } from "@/lib/i18n";
 import { colorThemes, fontChoices, type UserPreferences } from "@/lib/preferences";
 import type {
   AlertNoteOccurrenceDto,
-  AlertNoteRecurrence,
   AuthUser,
   FolderDto,
   NoteSummaryDto,
@@ -44,7 +42,7 @@ type NoteDragTarget = {
   position: DropPosition;
 };
 
-type AppArea = "personal" | "group" | "calendar" | "alertNotes";
+type AppArea = "personal" | "group" | "calendar" | "alertNotes" | "hidden";
 
 type SidebarProps = {
   user: AuthUser;
@@ -55,6 +53,9 @@ type SidebarProps = {
   pinnedNotes: NoteSummaryDto[];
   notes: NoteSummaryDto[];
   trashNotes: NoteSummaryDto[];
+  hiddenNotes: NoteSummaryDto[];
+  hiddenUnlocked: boolean;
+  hiddenHasPin: boolean;
   selectedFolderId: string | null;
   selectedNoteId: string | null;
   selectedTrash: boolean;
@@ -64,8 +65,10 @@ type SidebarProps = {
   onSelectFolder: (folderId: string) => void;
   onSelectAllNotes: () => void;
   onSelectTrash: () => void;
+  onSelectHidden: () => void;
   onSelectNote: (noteId: string) => void;
   onSelectTrashNote: (noteId: string) => void;
+  onSelectHiddenNote: (noteId: string) => void;
   onCreateNoteInFolder: (folderId: string) => void;
   onCreateFolder: (name: string, parentFolderId?: string | null) => Promise<void>;
   onRenameFolder: (folderId: string, name: string) => Promise<void>;
@@ -81,6 +84,7 @@ type SidebarProps = {
   onCloseSidebar: () => void;
   preferences: UserPreferences;
   onPreferencesChange: (preferences: Partial<UserPreferences>) => void;
+  onSetHiddenPin: (pin: string | null, password: string) => Promise<boolean>;
   onLogout: () => void;
 };
 
@@ -93,6 +97,9 @@ export function Sidebar({
   pinnedNotes,
   notes,
   trashNotes,
+  hiddenNotes,
+  hiddenUnlocked,
+  hiddenHasPin,
   selectedFolderId,
   selectedNoteId,
   selectedTrash,
@@ -102,8 +109,10 @@ export function Sidebar({
   onSelectFolder,
   onSelectAllNotes,
   onSelectTrash,
+  onSelectHidden,
   onSelectNote,
   onSelectTrashNote,
+  onSelectHiddenNote,
   onCreateNoteInFolder,
   onCreateFolder,
   onRenameFolder,
@@ -114,6 +123,7 @@ export function Sidebar({
   onCloseSidebar,
   preferences,
   onPreferencesChange,
+  onSetHiddenPin,
   onLogout,
 }: SidebarProps) {
   const { language, setLanguage, t } = useI18n();
@@ -122,6 +132,10 @@ export function Sidebar({
   const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exportingNotes, setExportingNotes] = useState(false);
+  const [hiddenPin, setHiddenPin] = useState("");
+  const [hiddenPassword, setHiddenPassword] = useState("");
+  const [hiddenPinSaving, setHiddenPinSaving] = useState(false);
+  const [hiddenPinStatus, setHiddenPinStatus] = useState<string | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [dragOverNote, setDragOverNote] = useState<NoteDragTarget | null>(null);
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(
@@ -206,6 +220,41 @@ export function Sidebar({
       window.alert(error instanceof Error ? error.message : t("settings.exportError"));
     } finally {
       setExportingNotes(false);
+    }
+  }
+
+  async function submitHiddenPin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!hiddenPin.trim()) {
+      return;
+    }
+
+    setHiddenPinSaving(true);
+    const saved = await onSetHiddenPin(hiddenPin.trim(), hiddenPassword);
+    setHiddenPinSaving(false);
+    setHiddenPinStatus(saved ? t("settings.hiddenPinSaved") : t("settings.hiddenPinError"));
+
+    if (saved) {
+      setHiddenPin("");
+      setHiddenPassword("");
+    }
+  }
+
+  async function clearHiddenPin() {
+    if (!hiddenPassword) {
+      setHiddenPinStatus(t("settings.hiddenPasswordRequired"));
+      return;
+    }
+
+    setHiddenPinSaving(true);
+    const saved = await onSetHiddenPin(null, hiddenPassword);
+    setHiddenPinSaving(false);
+    setHiddenPinStatus(saved ? t("settings.hiddenPinSaved") : t("settings.hiddenPinError"));
+
+    if (saved) {
+      setHiddenPin("");
+      setHiddenPassword("");
     }
   }
 
@@ -504,6 +553,58 @@ export function Sidebar({
               />
             </SettingsRow>
 
+            <SettingsRow label={t("settings.hiddenPin")}>
+              <form className="grid gap-2" onSubmit={submitHiddenPin}>
+                <input
+                  className="notka-input h-10 py-0"
+                  type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={12}
+                  value={hiddenPin}
+                  onChange={(event) => {
+                    setHiddenPin(event.target.value.replace(/\D/g, ""));
+                    setHiddenPinStatus(null);
+                  }}
+                  placeholder={t("settings.hiddenPinPlaceholder")}
+                  autoComplete="new-password"
+                />
+                <input
+                  className="notka-input h-10 py-0"
+                  type="password"
+                  value={hiddenPassword}
+                  onChange={(event) => {
+                    setHiddenPassword(event.target.value);
+                    setHiddenPinStatus(null);
+                  }}
+                  placeholder={t("settings.hiddenPasswordPlaceholder")}
+                  autoComplete="current-password"
+                />
+                <div className="flex gap-2">
+                  <button
+                    className="muted-button h-9 flex-1 justify-center"
+                    type="submit"
+                    disabled={hiddenPinSaving || hiddenPin.length < 4 || !hiddenPassword}
+                  >
+                    {t("settings.saveHiddenPin")}
+                  </button>
+                  {hiddenHasPin ? (
+                    <button
+                      className="muted-button h-9 flex-1 justify-center"
+                      type="button"
+                      disabled={hiddenPinSaving || !hiddenPassword}
+                      onClick={() => void clearHiddenPin()}
+                    >
+                      {t("settings.clearHiddenPin")}
+                    </button>
+                  ) : null}
+                </div>
+                {hiddenPinStatus ? (
+                  <p className="text-xs text-slate-400 dark:text-slate-500">{hiddenPinStatus}</p>
+                ) : null}
+              </form>
+            </SettingsRow>
+
             <SettingsRow label={t("settings.export")}>
               <button
                 className="muted-button w-full justify-start"
@@ -630,7 +731,37 @@ export function Sidebar({
                 <button
                   className={cn(
                     "sidebar-item min-w-0",
-                    selectedFolderId === null && !selectedTrash && "sidebar-item-active",
+                    activeArea === "hidden" && "sidebar-item-active",
+                  )}
+                  type="button"
+                  onClick={onSelectHidden}
+                >
+                  <Lock className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{t("sidebar.hiddenNotes")}</span>
+                  {hiddenUnlocked && hiddenNotes.length > 0 ? (
+                    <span className="notka-badge px-2 py-0.5 text-[11px]">{hiddenNotes.length}</span>
+                  ) : null}
+                </button>
+                {activeArea === "hidden" && hiddenUnlocked
+                  ? hiddenNotes.map((note) => (
+                      <TreeNoteItem
+                        key={`hidden-${note.id}`}
+                        note={note}
+                        active={selectedNoteId === note.id}
+                        depth={1}
+                        draggable={false}
+                        onClick={() => onSelectHiddenNote(note.id)}
+                      />
+                    ))
+                  : null}
+                <button
+                  className={cn(
+                    "sidebar-item min-w-0",
+                    selectedFolderId === null &&
+                      !selectedTrash &&
+                      activeArea !== "hidden" &&
+                      activeArea !== "alertNotes" &&
+                      "sidebar-item-active",
                   )}
                   type="button"
                   onDragOver={(event) => event.preventDefault()}
@@ -724,8 +855,11 @@ function AlertNotesSection({
   active: boolean;
   onOpen: () => void;
 }) {
-  const { language, t } = useI18n();
-  const visibleAlertNotes = alertNotes.slice(0, 4);
+  const { t } = useI18n();
+  const alertTone = alertNotes.reduce<AlertTone>(
+    (current, alertNote) => strongestAlertTone(current, getAlertTone(alertNote.scheduledAt)),
+    "none",
+  );
 
   return (
     <SidebarSection
@@ -745,88 +879,28 @@ function AlertNotesSection({
       <button
         className={cn(
           "sidebar-item mb-2 min-w-0 border border-transparent py-2",
+          noteAlertClass(alertTone),
           active &&
             "sidebar-item-active border-teal-400/30 bg-teal-500/10 shadow-[0_0_20px_rgba(20,184,166,0.12)]",
         )}
         type="button"
         onClick={onOpen}
       >
-        <CheckSquare className="h-4 w-4 shrink-0 text-teal-600 dark:text-teal-300" />
+        {alertTone === "red" ? (
+          <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500 dark:text-rose-300" />
+        ) : (
+          <CheckSquare
+            className={cn(
+              "h-4 w-4 shrink-0 text-teal-600 dark:text-teal-300",
+              alertTone === "yellow" && "text-amber-600 dark:text-amber-300",
+            )}
+          />
+        )}
         <span className="min-w-0 flex-1 truncate">{t("alertNotes.open")}</span>
         <span className="notka-badge px-2 py-0.5 text-[11px]">{alertNotes.length}</span>
       </button>
-
-      {visibleAlertNotes.length > 0 ? (
-        <div className="space-y-1">
-          {visibleAlertNotes.map((alertNote) => (
-            <button
-              key={alertNote.id}
-              className="group flex w-full items-start gap-2 rounded-xl border border-black/[0.06] bg-white/20 px-2.5 py-2 text-left shadow-sm shadow-slate-950/[0.02] transition hover:border-teal-500/20 hover:bg-white/40 focus:outline-none focus:ring-2 focus:ring-teal-500/15 dark:border-white/[0.07] dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
-              type="button"
-              onClick={onOpen}
-            >
-              <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300">
-                <CheckSquare className="h-3 w-3" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                  {alertNote.text}
-                </span>
-                <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                  <CalendarClock className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{formatAlertNoteDate(alertNote.scheduledAt, language)}</span>
-                  {alertNote.recurring ? (
-                    <>
-                      <Repeat className="ml-1 h-3 w-3 shrink-0" />
-                      <span className="shrink-0">{recurrenceLabel(alertNote.recurrence, t)}</span>
-                    </>
-                  ) : null}
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : (
-        <EmptyLine text={t("alertNotes.noAlertNotes")} />
-      )}
     </SidebarSection>
   );
-}
-
-function formatAlertNoteDate(value: string, language: ReturnType<typeof useI18n>["language"]) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return new Intl.DateTimeFormat(language === "pl" ? "pl-PL" : "en-US", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(date);
-}
-
-function recurrenceLabel(
-  recurrence: AlertNoteRecurrence,
-  t: ReturnType<typeof useI18n>["t"],
-) {
-  if (recurrence === "daily") {
-    return t("alertNotes.recurrenceDaily");
-  }
-
-  if (recurrence === "weekly") {
-    return t("alertNotes.recurrenceWeekly");
-  }
-
-  if (recurrence === "monthly") {
-    return t("alertNotes.recurrenceMonthly");
-  }
-
-  if (recurrence === "yearly") {
-    return t("alertNotes.recurrenceYearly");
-  }
-
-  return t("alertNotes.recurrenceNone");
 }
 
 type FolderNode = FolderDto & {
@@ -1306,6 +1380,26 @@ function noteAlertClass(tone: AlertTone) {
   }
 
   return "";
+}
+
+function strongestAlertTone(current: AlertTone, next: AlertTone): AlertTone {
+  return alertToneRank(next) > alertToneRank(current) ? next : current;
+}
+
+function alertToneRank(tone: AlertTone) {
+  if (tone === "red") {
+    return 3;
+  }
+
+  if (tone === "yellow") {
+    return 2;
+  }
+
+  if (tone === "neon") {
+    return 1;
+  }
+
+  return 0;
 }
 
 function pinnedNoteClass() {

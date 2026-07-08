@@ -6,6 +6,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 import { getDb } from "@/db";
 import { sessions, users } from "@/db/schema";
+import { clearHiddenAccess } from "@/lib/auth/hidden-access";
 import type { AuthUser } from "@/lib/types";
 
 const SESSION_COOKIE = "notka_session";
@@ -55,6 +56,7 @@ export async function destroySession() {
     path: "/",
     maxAge: 0,
   });
+  clearHiddenAccess();
 }
 
 export async function getCurrentUser(): Promise<AuthUser | null> {
