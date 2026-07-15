@@ -1530,6 +1530,7 @@ function AlertNotesView({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<AlertNoteFormState>(() => newAlertNoteFormState());
   const [saving, setSaving] = useState(false);
+  const [checkingOutId, setCheckingOutId] = useState<string | null>(null);
   const editingAlertNote = alertNotes.find((alertNote) => alertNote.id === editingId) ?? null;
 
   function beginCreate() {
@@ -1592,6 +1593,25 @@ function AlertNotesView({
     }
   }
 
+  async function checkOutPastOccurrence(alertNote: AlertNoteOccurrenceDto) {
+    setCheckingOutId(alertNote.id);
+
+    try {
+      await onDeleteAlertNote(alertNote.alertNoteId, {
+        occurrenceAt: alertNote.occurrenceAt,
+        mode: "current",
+      });
+
+      if (editingId === alertNote.id) {
+        beginCreate();
+      }
+    } catch {
+      return;
+    } finally {
+      setCheckingOutId(null);
+    }
+  }
+
   return (
     <section className="glass-panel flex min-h-[calc(100dvh-1rem)] flex-col rounded-2xl p-3 sm:p-5">
       <header className="flex flex-col gap-3 border-b border-black/[0.06] pb-4 dark:border-white/[0.08] sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
@@ -1624,54 +1644,72 @@ function AlertNotesView({
             <div className="max-h-[calc(100dvh-13rem)] overflow-y-auto p-2">
               {alertNotes.map((alertNote) => {
                 const tone = alertCalendarTone(alertNote.scheduledAt);
+                const isPast = new Date(alertNote.scheduledAt).getTime() < Date.now();
 
                 return (
-                <button
+                <div
                   key={alertNote.id}
                   className={cn(
-                    "group mb-2 flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition hover:-translate-y-px focus:outline-none focus:ring-4 focus:ring-teal-500/10",
+                    "group mb-2 flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition",
                     editingId === alertNote.id
                       ? "border-teal-400/35 bg-teal-500/[0.12] shadow-sm shadow-teal-500/10 dark:bg-teal-500/[0.1]"
                       : calendarToneClass(tone),
                   )}
-                  type="button"
-                  onClick={() => beginEdit(alertNote)}
                 >
-                  <span
-                    className={cn(
-                      "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border",
-                      tone === "red" &&
-                        "border-rose-400/25 bg-rose-500/15 text-rose-500 dark:text-rose-300",
-                      tone === "yellow" &&
-                        "border-amber-400/25 bg-amber-500/15 text-amber-600 dark:text-amber-300",
-                      tone === "green" &&
-                        "border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300",
-                    )}
+                  <button
+                    className="flex min-w-0 flex-1 items-start gap-3 text-left focus:outline-none"
+                    type="button"
+                    onClick={() => beginEdit(alertNote)}
                   >
-                    {tone === "red" ? (
-                      <AlertTriangle className="h-3.5 w-3.5" />
-                    ) : (
-                      <CheckSquare className="h-3.5 w-3.5" />
-                    )}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-slate-950 dark:text-white">
-                      {alertNote.text}
+                    <span
+                      className={cn(
+                        "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border",
+                        tone === "red" &&
+                          "border-rose-400/25 bg-rose-500/15 text-rose-500 dark:text-rose-300",
+                        tone === "yellow" &&
+                          "border-amber-400/25 bg-amber-500/15 text-amber-600 dark:text-amber-300",
+                        tone === "green" &&
+                          "border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300",
+                      )}
+                    >
+                      {tone === "red" ? (
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                      ) : (
+                        <CheckSquare className="h-3.5 w-3.5" />
+                      )}
                     </span>
-                    <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
-                      <span className="inline-flex items-center gap-1">
-                        <CalendarClock className="h-3.5 w-3.5" />
-                        {formatEntryDate(new Date(alertNote.scheduledAt), language)}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-slate-950 dark:text-white">
+                        {alertNote.text}
                       </span>
-                      {alertNote.recurring ? (
+                      <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                         <span className="inline-flex items-center gap-1">
-                          <Repeat className="h-3.5 w-3.5" />
-                          {recurrenceLabel(alertNote.recurrence, t)}
+                          <CalendarClock className="h-3.5 w-3.5" />
+                          {formatEntryDate(new Date(alertNote.scheduledAt), language)}
                         </span>
-                      ) : null}
+                        {alertNote.recurring ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Repeat className="h-3.5 w-3.5" />
+                            {recurrenceLabel(alertNote.recurrence, t)}
+                          </span>
+                        ) : null}
+                      </span>
                     </span>
-                  </span>
-                </button>
+                  </button>
+                  {isPast && alertNote.recurring ? (
+                    <Button
+                      type="button"
+                      className="shrink-0 self-center border-teal-500/30 text-teal-700 hover:bg-teal-500/10 dark:text-teal-300"
+                      disabled={checkingOutId === alertNote.id}
+                      onClick={() => void checkOutPastOccurrence(alertNote)}
+                    >
+                      <CheckSquare className="h-4 w-4" />
+                      {checkingOutId === alertNote.id
+                        ? t("alertNotes.checkingOut")
+                        : t("alertNotes.checkOut")}
+                    </Button>
+                  ) : null}
+                </div>
                 );
               })}
             </div>
