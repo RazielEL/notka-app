@@ -116,6 +116,8 @@ const en = {
   "alertNotes.edit": "Edit alert note",
   "alertNotes.delete": "Delete alert note",
   "alertNotes.deleteConfirm": "Delete this alert note?",
+  "alertNotes.checkOut": "Check Out",
+  "alertNotes.checkingOut": "Checking out...",
 
   "overview.newNote": "New note",
   "overview.noGroupNotes": "No group notes yet",
@@ -354,6 +356,8 @@ const pl: Record<TranslationKey, string> = {
   "alertNotes.edit": "Edytuj alert note",
   "alertNotes.delete": "Usuń alert note",
   "alertNotes.deleteConfirm": "Usunąć ten alert note?",
+  "alertNotes.checkOut": "Check Out",
+  "alertNotes.checkingOut": "Checking out...",
 
   "overview.newNote": "Nowa notatka",
   "overview.noGroupNotes": "Nie ma jeszcze notatek grupowych",
